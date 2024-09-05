@@ -3,7 +3,7 @@ Welcome to the Chaos Engineering Demo application. This project has been setup t
 
 
 ## Documentation
-We have several documents in this repo that will help you understand, use, and contribute to this project. 
+We have several documents in this repo that will help you understand, use, and contribute to this project:
 
 | |
 |:--|
