@@ -4,12 +4,12 @@ import { useNavigate } from "react-router-dom";
 
 function Hero() {
 
-        const history = useNavigate()
-        const buyNow = (id) => {
-            history('/product/detail/'+id)
+        const history = useNavigate();
+        const buyNow = (id:number):void => {
+            history('/product/detail/'+id);
         }
-        const moreDetails = () => {
-            history('/list/controllers')
+        const moreDetails = ():void => {
+            history('/list/controllers');
         }
         const ITEMS = [
             {

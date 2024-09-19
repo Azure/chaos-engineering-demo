@@ -44,6 +44,9 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
     administratorLogin: sqlAdminUser
     administratorLoginPassword: sqlPassword
     version: '12.0'
+    administrators: {
+      azureADOnlyAuthentication: false
+    }
   }
 
   resource db_fw_allowazureresources 'firewallRules' = {
