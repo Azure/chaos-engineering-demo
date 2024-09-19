@@ -74,12 +74,17 @@ public class DependencyInjection : FunctionsStartup
         // inject mediatr
         services.AddMediatR(Assembly.GetExecutingAssembly());
 
+        var tokenCredential = new DefaultAzureCredential();
+
         // inject ef-core dbcontexts (after fetching connection string from azure keyvault).
         var productsDbConnectionString = configuration[KeyVaultConstants.SecretNameProductsDbConnectionString];
-        services.AddDbContext<ProductsDbContext>(options => options.UseSqlServer(productsDbConnectionString));
+        services.AddDbContext<ProductsDbContext>(options => 
+        options.UseSqlServer(CreateSqlConnectionWithManagedIdentity(productsDbConnectionString, tokenCredential)));
+
 
         var profilesDbConnectionString = configuration[KeyVaultConstants.SecretNameProfilesDbConnectionString];
-        services.AddDbContext<ProfilesDbContext>(options => options.UseSqlServer(profilesDbConnectionString));
+        services.AddDbContext<ProfilesDbContext>(options => 
+        options.UseSqlServer(CreateSqlConnectionWithManagedIdentity(profilesDbConnectionString, tokenCredential)));
 
         // injecting the cosmosdb clients
         var stocksDbConnectionString = configuration[KeyVaultConstants.SecretNameStocksDbConnectionString];
@@ -141,4 +146,16 @@ public class DependencyInjection : FunctionsStartup
 
         app.MapControllers();
     }
+}
+
+private static SqlConnection CreateSqlConnectionWithManagedIdentity(string connectionString, TokenCredential tokenCredential)
+{
+    var connection = new SqlConnection(connectionString);
+
+    // Get the Access Token from the Managed Identity for Azure SQL
+    connection.AccessToken = tokenCredential.GetToken(
+        new Azure.Core.TokenRequestContext(new[] { "https://database.windows.net/.default" })
+    ).Token;
+
+    return connection;
 }
