@@ -103,6 +103,7 @@ resource cosmosStocks 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
   name: cosmosStocksDatabaseName
   location: location
   properties: {
+    disableLocalAuth: false
     databaseAccountOfferType: 'Standard'
     enableFreeTier: false
     capabilities: [
@@ -163,6 +164,7 @@ resource cosmosCarts 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
   name: cosmosCartsDatabaseName
   location: location
   properties: {
+    disableLocalAuth: false
     databaseAccountOfferType: 'Standard'
     enableFreeTier: false
     capabilities: [
