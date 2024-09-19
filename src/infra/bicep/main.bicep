@@ -92,6 +92,8 @@ module databases './resources/databases.bicep' = {
     zoneRedundant: zoneRedundant
     keyvaultName: keyvault.outputs.keyvaultName
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
+    aksPrincipalId: containers.outputs.aksPrincipalId
+    acaPrincipalId: containers.outputs.acaPrincipalId
   }
   dependsOn: [
     keyvault

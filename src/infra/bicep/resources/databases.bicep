@@ -17,6 +17,9 @@ param sqlPassword string = newGuid()
 @description('Log Analytics workspace ID for diagnostic settings')
 param logAnalyticsId string
 
+param aksPrincipalId string
+param acaPrincipalId string
+
 var sqlServerHostName = environment().suffixes.sqlServerHostname
 var sqlServerName = '${nameprefix}sqlserver'
 var sqlAdminUser = 'sqladmin'
@@ -45,7 +48,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
     administratorLoginPassword: sqlPassword
     version: '12.0'
     administrators: {
-      azureADOnlyAuthentication: false
+      azureADOnlyAuthentication: true  // Enable only AAD authentication explicitly
     }
   }
 
@@ -106,7 +109,6 @@ resource cosmosStocks 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
   name: cosmosStocksDatabaseName
   location: location
   properties: {
-    disableLocalAuth: false
     databaseAccountOfferType: 'Standard'
     enableFreeTier: false
     capabilities: [
@@ -167,7 +169,6 @@ resource cosmosCarts 'Microsoft.DocumentDB/databaseAccounts@2022-08-15' = {
   name: cosmosCartsDatabaseName
   location: location
   properties: {
-    disableLocalAuth: false
     databaseAccountOfferType: 'Standard'
     enableFreeTier: false
     capabilities: [
@@ -229,7 +230,7 @@ resource secretProductsDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProducts
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Persist Security Info=False;User ID=${sqlAdminUser};Password=${sqlPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";'
   }
 }
 
@@ -237,7 +238,7 @@ resource secretProfilesDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProfiles
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Persist Security Info=False;User ID=${sqlAdminUser};Password=${sqlPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";'
   }
 }
 
@@ -264,6 +265,63 @@ resource secretServerPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
     value: sqlPassword
   }
 }
+
+// Assign SQL DB Contributor Role to ACA and AKS managed identity
+resource sqlRoleAssignmentAks 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(sqlServer.id, aksPrincipalId)
+  scope: sqlServer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec') // SQL DB Contributor Role
+    principalId: aksPrincipalId
+  }
+}
+
+resource sqlRoleAssignmentAca 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(sqlServer.id, acaPrincipalId)
+  scope: sqlServer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec') // SQL DB Contributor Role
+    principalId: acaPrincipalId
+  }
+}
+
+// Assign Cosmos DB Data Contributor role to ACA and AKS managed identity
+resource cosmosDbRoleAssignmentAca 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(cosmosCarts.id, acaPrincipalId, 'CosmosDBContributor')
+  scope: cosmosCarts
+  properties: {
+    principalId: acaPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5bd9cd88-fe45-4216-938b-f97437e15450') // Cosmos DB Data Contributor
+  }
+}
+
+resource cosmosDbRoleAssignmentAks 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(cosmosCarts.id, aksPrincipalId, 'CosmosDBContributor')
+  scope: cosmosCarts
+  properties: {
+    principalId: aksPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5bd9cd88-fe45-4216-938b-f97437e15450') // Cosmos DB Data Contributor
+  }
+}
+
+resource cosmosStocksRoleAssignmentAca 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(cosmosStocks.id, acaPrincipalId, 'CosmosDBContributor')
+  scope: cosmosStocks
+  properties: {
+    principalId: acaPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5bd9cd88-fe45-4216-938b-f97437e15450') // Cosmos DB Data Contributor
+  }
+}
+
+resource cosmosStocksRoleAssignmentAks 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(cosmosStocks.id, aksPrincipalId, 'CosmosDBContributor')
+  scope: cosmosStocks
+  properties: {
+    principalId: aksPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5bd9cd88-fe45-4216-938b-f97437e15450') // Cosmos DB Data Contributor
+  }
+}
+
 
 output sqlServerName string = sqlServer.name
 output sqlProductsDatabaseName string = productsdb.name

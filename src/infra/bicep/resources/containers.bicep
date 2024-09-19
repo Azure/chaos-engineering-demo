@@ -279,7 +279,10 @@ resource secretCartsApiEndpoint 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
 
 output aksClusterName string = aks.name
 output aksClusterFqdn string = aks.properties.fqdn
+output aksPrincipalId string = aks.identity.principalId
 output aksClusterKubeletIdentity string = aks.properties.identityProfile.kubeletidentity.objectId
 output acrName string = acr.name
 output acaAppFqdn string = cartsApiContainerApp.properties.configuration.ingress.fqdn
 output acaAppName string = cartsApiContainerApp.name
+output acaPrincipalId string = cartsApiContainerApp.identity.principalId
+
