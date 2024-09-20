@@ -19,8 +19,6 @@ param logAnalyticsId string
 
 param aksPrincipalId string
 param acaPrincipalId string
-param aksSubnetPrefix string
-param acaSubnetPrefix string
 
 var sqlServerHostName = environment().suffixes.sqlServerHostname
 var sqlServerName = '${nameprefix}sqlserver'
@@ -63,8 +61,8 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   resource db_fw_allowAKSSubnet 'firewallRules' = {
     name: 'AllowAKSSubnet'
     properties: {
-      endIpAddress: aksSubnetPrefix
-      startIpAddress: aksSubnetPrefix
+      startIpAddress: '10.12.0.0'
+      endIpAddress: '10.12.0.255'
     }
   }
 
@@ -72,8 +70,8 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   resource db_fw_allowACASubnet 'firewallRules' = {
     name: 'AllowAACaSubnet'
     properties: {
-      endIpAddress: acaSubnetPrefix
-      startIpAddress: acaSubnetPrefix
+      startIpAddress: '10.12.2.0'
+      endIpAddress: '10.12.2.255'
     }
   }
   

@@ -94,8 +94,6 @@ module databases './resources/databases.bicep' = {
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
     aksPrincipalId: containers.outputs.aksPrincipalId
     acaPrincipalId: containers.outputs.acaPrincipalId
-    aksSubnetPrefix: network.outputs.aksSubnetPrefix
-    acaSubnetPrefix: network.outputs.acaSubnetPrefix
   }
   dependsOn: [
     keyvault
