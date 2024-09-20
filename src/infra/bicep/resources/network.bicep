@@ -98,28 +98,15 @@ resource nsgAks 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
         }
       }
       {
-        name: 'Allow-Inbound-FrontDoor-80'
+        name: 'Allow-Inbound-FrontDoor'
         properties: {
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
-          destinationAddressPrefix: aksSubnetPrefix
-          destinationPortRange: '80'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
           priority: 1002          
           sourceAddressPrefix: 'AzureFrontDoor.Backend' 
-          sourcePortRange: '*'
-        }
-      }
-      {
-        name: 'Allow-Inbound-FrontDoor-443'
-        properties: {
-          access: 'Allow'
-          direction: 'Inbound'
-          protocol: 'Tcp'
-          destinationAddressPrefix: aksSubnetPrefix
-          destinationPortRange: '443'
-          priority: 1003         
-          sourceAddressPrefix: 'AzureFrontDoor.Backend'
           sourcePortRange: '*'
         }
       }
@@ -159,28 +146,15 @@ resource nsgAca 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
         }
       }
       {
-        name: 'Allow-Inbound-FrontDoor-80'
+        name: 'Allow-Inbound-FrontDoor'
         properties: {
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
-          destinationAddressPrefix: acaSubnetPrefix
-          destinationPortRange: '80'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
           priority: 1002          
           sourceAddressPrefix: 'AzureFrontDoor.Backend' 
-          sourcePortRange: '*'
-        }
-      }
-      {
-        name: 'Allow-Inbound-FrontDoor-443'
-        properties: {
-          access: 'Allow'
-          direction: 'Inbound'
-          protocol: 'Tcp'
-          destinationAddressPrefix: acaSubnetPrefix
-          destinationPortRange: '443'
-          priority: 1003          
-          sourceAddressPrefix: 'AzureFrontDoor.Backend'
           sourcePortRange: '*'
         }
       }
