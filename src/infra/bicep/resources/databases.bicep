@@ -246,7 +246,7 @@ resource secretProductsDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProducts
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
   }
 }
 
@@ -254,7 +254,7 @@ resource secretProfilesDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProfiles
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
   }
 }
 
