@@ -156,10 +156,10 @@ public class DependencyInjection : FunctionsStartup
         var connection = new SqlConnection(connectionString);
 
         // Get the Access Token from the Managed Identity for Azure SQL
-        connection.AccessToken = tokenCredential.GetToken(
-            new Azure.Core.TokenRequestContext(new[] { "https://database.windows.net/.default" }),
-            CancellationToken.None
-        ).Token;
+       // connection.AccessToken = tokenCredential.GetToken(
+       //     new Azure.Core.TokenRequestContext(new[] { "https://database.windows.net/.default" }),
+       //     CancellationToken.None
+       // ).Token;
 
         return connection;
     }
