@@ -7,6 +7,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Logging;
+using Microsoft.Data.SqlClient;
+using Azure.Core;
+
 
 [assembly: FunctionsStartup(typeof(DependencyInjection))]
 
@@ -146,16 +149,18 @@ public class DependencyInjection : FunctionsStartup
 
         app.MapControllers();
     }
-}
 
-private static SqlConnection CreateSqlConnectionWithManagedIdentity(string connectionString, TokenCredential tokenCredential)
-{
-    var connection = new SqlConnection(connectionString);
 
-    // Get the Access Token from the Managed Identity for Azure SQL
-    connection.AccessToken = tokenCredential.GetToken(
-        new Azure.Core.TokenRequestContext(new[] { "https://database.windows.net/.default" })
-    ).Token;
+    private static SqlConnection CreateSqlConnectionWithManagedIdentity(string connectionString, TokenCredential tokenCredential)
+    {
+        var connection = new SqlConnection(connectionString);
 
-    return connection;
+        // Get the Access Token from the Managed Identity for Azure SQL
+        connection.AccessToken = tokenCredential.GetToken(
+            new Azure.Core.TokenRequestContext(new[] { "https://database.windows.net/.default" }),
+            CancellationToken.None
+        ).Token;
+
+        return connection;
+    }
 }

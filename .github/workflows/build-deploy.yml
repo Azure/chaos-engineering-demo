@@ -199,12 +199,22 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: |
+          # Set -e ensures the script stops execution when an error occurs
+          Set-StrictMode -Version Latest
+
           $repoName = $env:ACR_REPO_PRODUCTS_NAME
           $version = "${{ github.sha }}"
           $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
           Write-Output "Building image with tag $tag"
+          
           $cmd = "docker build -f ./src/app/ContosoTraders.Api.Products/Dockerfile -t $tag src/app"
-          Invoke-Expression $cmd
+          $buildResult = Invoke-Expression $cmd
+
+          # Check the exit code of the Docker build, if it fails, stop the script and return an error
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Docker build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
 
       # The container registry was deployed with the infrastructure. AKS and ACA will pull from here. 
     - name: Push Container to ACR
@@ -251,12 +261,22 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: |
+            # Set -e ensures the script stops execution when an error occurs
+            Set-StrictMode -Version Latest
+
             $repoName = $env:ACR_REPO_CARTS_NAME
             $version = "${{ github.sha }}"
             $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
             Write-Output "Building image with tag $tag"
+            
             $cmd = "docker build -f ./src/app/ContosoTraders.Api.Carts/Dockerfile -t $tag src/app"
-            Invoke-Expression $cmd
+            $buildResult = Invoke-Expression $cmd
+
+            # Check the exit code of the Docker build, if it fails, stop the script and return an error
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Docker build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
       
       - name: Push Container to ACR
         uses: azure/powershell@v2
