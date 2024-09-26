@@ -84,6 +84,14 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-03-02-preview' = {
     networkProfile: {
       networkPlugin: 'azure'
     }
+    oidcIssuerProfile: {
+      enabled: true
+    }
+    securityProfile: {
+      workloadIdentity: {
+        enabled: true
+      }
+    }
 
     agentPoolProfiles: [
       {

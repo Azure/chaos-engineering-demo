@@ -140,6 +140,7 @@ output frontdoor_Name string = frontdoor.outputs.frontDoorName
 output frontdoor_Endpoint string = frontdoor.outputs.frontDoorEndpointHostName
 output acr_Name string = containers.outputs.acrName
 output keyvault_Name string = keyvault.outputs.keyvaultName
+output keyvault_ID string = keyvault.outputs.keyvaultId
 output aksCluster_Name string = containers.outputs.aksClusterName
 output aksCluster_KubeletIdentityId string = containers.outputs.aksClusterKubeletIdentity
 output aca_AppName string = containers.outputs.acaAppName
