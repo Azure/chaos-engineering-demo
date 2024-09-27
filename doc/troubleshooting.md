@@ -47,10 +47,36 @@ Delete the certificate
 ```shell
 kubectl delete certificate tls-secret
 ```
+Make sure the NSG AKS has an ALLOW-ALL Rule for the Cert-Manager to be able to verify the certificate:
+```shell
+$NSGAKSNAME=$DEPLOYMENT_NAME+"nsg-aks"
+az network nsg rule create --resource-group $RG_NAME --nsg-name $NSGAKSNAME --name "AllowAll" --priority 999 --access Allow --direction Inbound --protocol "*" --source-address-prefix "*" --source-port-range "*" --destination-address-prefix "*" --destination-port-range "*"
+
+```
+
 Apply the Certificate K8S Manifest in ```\src\app\ContosoTraders.Api.Products\Manifests\Certificate.yaml```
 Replace AKS_FQDN with the value from $lbHost from Step 3.
 ```shell
 kubectl apply -f Certificate.yaml
+kubectl wait --for=condition=Ready certificate/tls-secret --timeout=180s
+```
+Wait for the Certificate to be Ready="True" and Remove the NSG Rule
+```shell
+az network nsg rule delete --resource-group $RG_NAME --nsg-name $NSGAKSNAME --name "AllowAll"
+```
+
+## │ "The user, group or application 'appid=;iss=' does not have secrets list permission on key vault 
+A conflict might have occurred during the Pipeline that prevented the policy operation from completing. 
+This can happen if parallel operations are being performed on the Key Vault. 
+Add the KeyVault Access Policy to include the Workload Identity:
+```shell
+$MANAGED_IDENTITY_NAME="$DEPLOYMENT_NAME-wi"
+$USER_ASSIGNED_OBJ_ID=$(az identity show --resource-group $RG_NAME --name $MANAGED_IDENTITY_NAME --query 'principalId' -o tsv)
+az keyvault set-policy --name $KEYVAULT_NAME --object-id $USER_ASSIGNED_OBJ_ID --secret-permissions get list --key-permissions get list --certificate-permissions get list
+```
+Delete the Pod and wait for the Deployment to automatically start a new one
+```shell
+kubectl delete pod contoso-traders-products-****** 
 ```
 
 ## Pod Errors
