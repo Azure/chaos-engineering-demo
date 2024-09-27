@@ -42,6 +42,10 @@ public class DependencyInjection : FunctionsStartup
         builder.Configuration.AddAzureKeyVault(
                 new Uri(builder.Configuration["KeyVaultEndpoint"]),
                 new DefaultAzureCredential());
+                
+        // For local development, use the tenant
+        // TenantId = builder.Configuration["TenantId"]                                        
+        // );
         // else
         //     builder.Configuration.AddAzureKeyVault(
         //         new Uri(builder.Configuration["KeyVaultEndpoint"]),
@@ -82,11 +86,13 @@ public class DependencyInjection : FunctionsStartup
         services.AddDbContext<ProfilesDbContext>(options => options.UseSqlServer(profilesDbConnectionString));
 
         // injecting the cosmosdb clients
+        var stocksDatabaseName = configuration[KeyVaultConstants.SecretNameStocksDbName];
         var stocksDbConnectionString = configuration[KeyVaultConstants.SecretNameStocksDbConnectionString];
-        services.AddSingleton(_ => new CosmosClient(stocksDbConnectionString).GetDatabase(CosmosConstants.DatabaseNameStocks));
+        services.AddSingleton(_ => new CosmosClient(stocksDbConnectionString).GetDatabase(stocksDatabaseName));
 
+        var cartsDatabaseName = configuration[KeyVaultConstants.SecretNameCartsDbName];
         var cartsDbConnectionString = configuration[KeyVaultConstants.SecretNameCartsDbConnectionString];
-        services.AddSingleton(_ => new CosmosClient(cartsDbConnectionString).GetDatabase(CosmosConstants.DatabaseNameCarts));
+        services.AddSingleton(_ => new CosmosClient(cartsDbConnectionString).GetDatabase(cartsDatabaseName));
 
         // inject services
         services

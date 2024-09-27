@@ -11,9 +11,11 @@ spec:
     metadata:
       labels:
         app: contoso-traders-products
+        azure.workload.identity/use: "true"  # Required. Only pods with this label can use workload identity.
     spec:
       nodeSelector:
         "kubernetes.io/os": linux
+      serviceAccountName: workload-sa
       containers:
         - name: contoso-traders-products
           image: {ACR_NAME}.azurecr.io/{ACR_REPO_PRODUCTS_NAME}:{PRODUCTS_IMAGE_TAG}
@@ -23,11 +25,6 @@ spec:
                 secretKeyRef:
                   name: contoso-traders-kv-endpoint
                   key: contoso-traders-kv-endpoint
-            - name: ManagedIdentityClientId
-              valueFrom:
-                secretKeyRef:
-                  name: contoso-traders-mi-clientid
-                  key: contoso-traders-mi-clientid
           resources:
             requests:
               cpu: 100m

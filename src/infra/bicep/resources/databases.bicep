@@ -224,7 +224,7 @@ resource secretProductsDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProducts
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Persist Security Info=False;User ID=${sqlAdminUser};Password=${sqlPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProductsDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=Active Directory Default;'
   }
 }
 
@@ -232,7 +232,7 @@ resource secretProfilesDbConnectionString 'Microsoft.KeyVault/vaults/secrets@202
   parent: keyvault
   name: connectionStringProfiles
   properties: {
-    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Persist Security Info=False;User ID=${sqlAdminUser};Password=${sqlPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'Server=tcp:${sqlServerName}${sqlServerHostName},1433;Initial Catalog=${sqlProfilesDatabaseName};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=Active Directory Default;'
   }
 }
 
@@ -257,6 +257,36 @@ resource secretServerPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'sqlServerPassword'
   properties: {
     value: sqlPassword
+  }
+}
+
+// We need to store the CosmosDB Database and Container names in KeyVault as Secrets as well
+resource secretCosmosCartsDb 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyvault
+  name: 'cartsDbName'
+  properties: {
+    value: cosmosCartsDb.name
+  }
+}
+resource secretCosmosCartsDbConatiner 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyvault
+  name: 'cartsDbContainerName'
+  properties: {
+    value: '${cosmosCartsDatabaseName}dbc'
+  }
+}
+resource secretCosmosStocksDb 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyvault
+  name: 'stocksDbName'
+  properties: {
+    value: cosmosStocksDb.name
+  }
+}
+resource secretCosmosStocksDbContainer 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyvault
+  name: 'stocksDbContainerName'
+  properties: {
+    value: '${cosmosStocksDatabaseName}dbc'
   }
 }
 

@@ -22,9 +22,12 @@ msalInstance.addEventCallback((message: EventMessage) => {
         const user = { username, tenantId, name };
         const payload = {user, token: msalPayload.accessToken};
         getStore().dispatch(AuthenticationSlice.actions.loginSession(payload));
+      } else {
+        getStore().dispatch(AuthenticationSlice.actions.logoutSession());
       }
   } else if(message.eventType.includes("Failure")) {
       console.error(message);
+      getStore().dispatch(AuthenticationSlice.actions.logoutSession());
   }
 });
 
