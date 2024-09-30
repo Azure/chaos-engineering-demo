@@ -78,6 +78,13 @@ Delete the Pod and wait for the Deployment to automatically start a new one
 ```shell
 kubectl delete pod contoso-traders-products-****** 
 ```
+## │ Microsoft.Azure.Cosmos.CosmosException : Local Authorization is disabled. Use an AAD token to authorize all requests.
+This means we need to enable local auth for our cosmosDBs.
+
+```shell
+$cosmosdb = az cosmosdb show --name $COSMOSDB_NAME --resource-group $RG_NAME | ConvertFrom-Json
+az resource update --ids $cosmosdb.id --set properties.disableLocalAuth=false --latest-include-preview
+```
 
 ## Pod Errors
 ### Keyvault Access
