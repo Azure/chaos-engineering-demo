@@ -74,9 +74,9 @@ resource productsdb 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
   parent: sqlServer
   location: location
   sku: {
-    capacity: 5
-    tier: 'Basic'
-    name: 'Basic'
+    capacity: zoneRedundant ? 4 : 5
+    tier: zoneRedundant ? 'GeneralPurpose' : 'Basic'
+    name: zoneRedundant ? 'GP_Gen5_4' : 'Basic'
   }
   properties: {
     zoneRedundant: zoneRedundant
