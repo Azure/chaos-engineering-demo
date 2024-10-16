@@ -127,7 +127,7 @@ module roleassigmentrg './utils/uami-roleassigment-rg.bicep' = if (deployChaos) 
   name: '${rg.name}-roleassigmentrg'
   scope: rg
   params: {
-    uamiName: uami.outputs.userAssignedIdentityName
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
     uamiRg: rg.name
   }
 }
@@ -137,7 +137,7 @@ module roleassigmentrgvmss './utils/uami-roleassigment-rg.bicep' = if (deployCha
   name: '${rg.name}-roleassigmentrgvmss'
   scope: resourceGroup('${name}-aks-rg')
   params: {
-    uamiName: uami.outputs.userAssignedIdentityName
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
     uamiRg: rg.name
   }
   // We want to deploy this after the AKS:
@@ -154,7 +154,7 @@ module chaos './resources/chaos.bicep' = if (deployChaos) {
     nameprefix: toLower(name)
     location: rg.location
     aksClusterResourceGroup: containers.outputs.aksClusterResourceGroup
-    uamiName: uami.outputs.userAssignedIdentityName
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
   }
   // We want to deploy this last:
   dependsOn: [
