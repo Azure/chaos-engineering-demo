@@ -199,12 +199,21 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: |
+          # Set -e ensures the script stops execution when an error occurs
+          Set-StrictMode -Version Latest
+          
           $repoName = $env:ACR_REPO_PRODUCTS_NAME
           $version = "${{ github.sha }}"
           $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+          
           Write-Output "Building image with tag $tag"
           $cmd = "docker build -f ./src/app/ContosoTraders.Api.Products/Dockerfile -t $tag src/app"
-          Invoke-Expression $cmd
+          $buildResult = Invoke-Expression $cmd
+          # Check the exit code of the Docker build, if it fails, stop the script and return an error
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Docker build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
 
       # The container registry was deployed with the infrastructure. AKS and ACA will pull from here. 
     - name: Push Container to ACR
@@ -251,12 +260,22 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: |
+            # Set -e ensures the script stops execution when an error occurs
+            Set-StrictMode -Version Latest
+            
             $repoName = $env:ACR_REPO_CARTS_NAME
             $version = "${{ github.sha }}"
             $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+            
             Write-Output "Building image with tag $tag"
             $cmd = "docker build -f ./src/app/ContosoTraders.Api.Carts/Dockerfile -t $tag src/app"
-            Invoke-Expression $cmd
+            $buildResult = Invoke-Expression $cmd
+            
+            # Check the exit code of the Docker build, if it fails, stop the script and return an error
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Docker build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
       
       - name: Push Container to ACR
         uses: azure/powershell@v2
@@ -343,6 +362,64 @@ jobs:
           secret-name: "contoso-traders-mi-clientid"
           string-data: '{ "contoso-traders-mi-clientid" : "" }'
 
+      - name: Prepare Workload ID
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Get the OIDC Issuer URL
+            $AKS_OIDC_ISSUER=(az aks show -n ${{env.AKSCLUSTER_NAME}} -g ${{env.RG_NAME}} --query "oidcIssuerProfile.issuerUrl" -otsv)
+
+            $MANAGED_IDENTITY_NAME="${{env.DEPLOYMENT_NAME}}-wi"
+            # Create the managed identity
+            az identity create --name $MANAGED_IDENTITY_NAME --resource-group ${{env.RG_NAME}} --location ${{env.DEPLOYMENT_REGION}}
+
+            # Get identity client ID
+            $USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'clientId' -o tsv)
+            $USER_ASSIGNED_OBJ_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'principalId' -o tsv)
+            
+            Write-Output "Workload Identity clientId: $USER_ASSIGNED_CLIENT_ID objectId: $USER_ASSIGNED_OBJ_ID "
+            ("{0}={1}" -f "USER_ASSIGNED_CLIENT_ID", $USER_ASSIGNED_CLIENT_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "USER_ASSIGNED_OBJ_ID", $USER_ASSIGNED_OBJ_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "AKS_OIDC_ISSUER", $AKS_OIDC_ISSUER) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "MANAGED_IDENTITY_NAME", $MANAGED_IDENTITY_NAME) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create Service account to federate with managed identity
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+        env:
+          USER_ASSIGNED_CLIENT_ID: ${{ env.USER_ASSIGNED_CLIENT_ID }}
+
+      - name: Create Service Account for Federate with Managed Identity
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+          force: true
+
+      - name: Federate the Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az identity federated-credential create --name wi-federated-id --identity-name ${{env.MANAGED_IDENTITY_NAME}} --resource-group ${{env.RG_NAME}} --issuer ${{env.AKS_OIDC_ISSUER}} --subject system:serviceaccount:default:workload-sa
+      
+      - name: Assign roles to Workload Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az role assignment create --assignee-object-id ${{env.USER_ASSIGNED_OBJ_ID}} --role "Key Vault Secrets User" --scope ${{env.KEYVAULT_ID}} --assignee-principal-type ServicePrincipal
+
+      - name: Assign permission access policy to KeyVault
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az keyvault set-policy --name ${{env.KEYVAULT_NAME}} --object-id ${{env.USER_ASSIGNED_OBJ_ID}} --secret-permissions get list --key-permissions get list --certificate-permissions get list
+      
       - name: Apply Deployment Manifest
         uses: Azure/k8s-deploy@v5
         with:
@@ -662,7 +739,7 @@ jobs:
 
   insert-sampledata:
     name: 'Insert Sample Data in Database'
-    needs: [deploy-infra]
+    needs: [deploy-infra, deploy-products-api]
     runs-on: ubuntu-latest
     steps:
     - name: 'Checkout GitHub Action'
@@ -705,3 +782,36 @@ jobs:
       with:
         connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
         path: ./src/app/ContosoTraders.Api.Products/Migration/productsdb.sql
+
+    - name: Prepare Workload User SQL
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |       
+          # Get the Managed Identity (Entra Workload) principal ID
+          $managedIdentityName="${{env.DEPLOYMENT_NAME}}-wi"
+          $identityPrincipalId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query principalId --output tsv)
+          $identityClientId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query clientId --output tsv)
+
+                    
+          # Generate SID to bypass directory read permission
+          $sid = "0x" + [System.BitConverter]::ToString(([guid]$identityClientId).ToByteArray()).Replace("-", "")
+          
+          # Create SQL script for creating user and assigning the role
+          $sqlScript = @"
+                  CREATE USER  [$managedIdentityName] WITH SID = $sid, TYPE = E;
+                  ALTER ROLE db_datareader ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_datawriter ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_ddladmin  ADD MEMBER [$managedIdentityName];
+                  GO
+          "@
+          Set-Content -Path ./user_creation.sql -Value $sqlScript
+          Get-Content -Path ./user_creation.sql
+
+    - name: Add Workload User ID to DB
+      uses: azure/sql-action@v2
+      with:
+        connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
+        path: ./user_creation.sql
+
+        
