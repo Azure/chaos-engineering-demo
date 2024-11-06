@@ -124,6 +124,16 @@ jobs:
           "#### Your Contoso Traders website can be found at https://$endpointHostname and will start working once the application deployment is complete." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
           "#### If you want to enable authentication for your website, ensure that https://$endpointHostname is added as a redirect URI to your Entra application." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
 
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
       # The private key of the SSH key pair should be stored in keyvault. 
       # If it doesn't exist, we did not regenerate during this deployment and we can move on.
     - name: Save SSH Private Key to Keyvault
@@ -138,9 +148,8 @@ jobs:
             exit
           }
 
-          # Find out the name of the Keyvault:
-          $deploymentOutput = Get-Content output.deployment.json | ConvertFrom-Json -Depth 10
-          $keyvaultName = $deploymentOutput.keyvault_Name.Value
+          # Get the keyvault name from the environment
+          $keyvaultName = $env:KEYVAULT_NAME
 
           # Give myself access to it:
           $appId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
@@ -149,6 +158,24 @@ jobs:
           # Get the key from the file and store it:
           $key = Get-Content $keyPath -Raw | ConvertTo-SecureString -AsPlainText -Force
           Set-AzKeyVaultSecret -VaultName $keyvaultName -Name "ssh-private-key" -SecretValue $key   
+
+      # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
+      # But we can only upload blobs to the storage account if we have blob contributor RBAC permission first
+      # We need this in later steps, but do it now to give the permission time to propagate.
+    - name: Assign Blob Data Contributor Role to SP
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest" 
+        inlineScript: |     
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          $resourceGroup = Get-AzResourceGroup -Name $env:RG_NAME
+          
+          # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
+          $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          if(-not $roleassn) {
+            Write-Output "SP does not have blob data contributor role, assigning."
+            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          }
 
       # The deployment output is saved in a file. It must be uploaded as an artifact so it can be used in later jobs.
     - name: Save deployment output
@@ -226,7 +253,6 @@ jobs:
           $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
           Invoke-Expression $cmd
 
-
   build-carts-api:
     name: 'Build Carts API'
     needs: [deploy-infra]
@@ -286,8 +312,7 @@ jobs:
             Connect-AzContainerRegistry -Name $env:ACR_NAME
             $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
             Invoke-Expression $cmd
-
-     
+   
   deploy-products-api:
     name: 'Deploy Products API to AKS'
     needs: [deploy-infra, build-products-api]
@@ -588,8 +613,7 @@ jobs:
           inlineScript: |
             az config set extension.use_dynamic_install=yes_without_prompt
             az containerapp update -n ${{ env.ACA_APPNAME }} -g ${{ env.RG_NAME }} --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.ACR_REPO_CARTS_NAME }}:${{ github.sha }}
-
-            
+          
   build-website:
       name: 'Build Website'
       needs: [deploy-products-api, deploy-carts-api]
@@ -647,7 +671,6 @@ jobs:
             name: websiteBuild
             path: src/app/ContosoTraders.Ui.Website/build
     
-
   deploy-website:
     name: 'Deploy Website to Storage'
     needs: [deploy-infra, build-website]
@@ -688,33 +711,15 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: | 
-            # $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-            # Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
-
-      # - name: deploy ui to storage
-      #   uses: azure/CLI@v1
-      #   with:
-      #     inlineScript: az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' -c '$web' -s 'website'
 
       - name: Upload UI to storage account
         uses: azure/powershell@v2
         with: 
           azPSVersion: "latest" 
           inlineScript: | 
-            # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
-            # But we can only upload blobs to the storage account if we have blob contributor RBAC permission firs
-            $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
-            $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-            
-            # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
-            $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
-            if(-not $roleassn) {
-              Write-Output "SP does not have blob data contributor role, assigning."
-              New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
-            }
-
+            # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
 
@@ -755,29 +760,12 @@ jobs:
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
-    # - name: Upload Images
-    #   uses: azure/CLI@v1
-    #   with:
-    #     inlineScript: |
-    #       az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' -c '$web' -s 'src/app/ContosoTraders.Api.Images'
-    
     - name: Upload Images
       uses: azure/powershell@v2
       with: 
         azPSVersion: "latest" 
         inlineScript: | 
-          # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
-          # But we can only upload blobs to the storage account if we have blob contributor RBAC permission firs
-          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
-          $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
-
-          # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
-          $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
-          if(-not $roleassn) {
-            Write-Output "SP does not have blob data contributor role, assigning."
-            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
-          }
-
+          # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
 
