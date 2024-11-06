@@ -702,7 +702,7 @@ jobs:
             $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
             $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
 
-            $roleassn = Get-AzRoleAssignment -ObjectId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+            $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
             if(-not $roleassn) {
               Write-Output "SP does not have blob data contributor role, assigning."
               New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
@@ -762,7 +762,7 @@ jobs:
           $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
           $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
 
-          $roleassn = Get-AzRoleAssignment -ObjectId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+          $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
           if(-not $roleassn) {
             Write-Output "SP does not have blob data contributor role, assigning."
             New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
