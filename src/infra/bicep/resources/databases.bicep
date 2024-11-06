@@ -10,16 +10,12 @@ param zoneRedundant bool = false
 @description('The name of the key vault used for the application')
 param keyvaultName string
 
-// @description('Password for SQL Server')
-// @secure()
-// param sqlPassword string = newGuid()
-
 @description('Log Analytics workspace ID for diagnostic settings')
 param logAnalyticsId string
 
 var sqlServerHostName = environment().suffixes.sqlServerHostname
 var sqlServerName = '${nameprefix}sqlserver'
-// var sqlAdminUser = 'sqladmin'
+
 var sqlProductsDatabaseName = '${nameprefix}sql-products-db'
 var sqlProfilesDatabaseName = '${nameprefix}sql-profiles-db'
 
@@ -41,8 +37,6 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   name: sqlServerName
   location: location
   properties: {
-    // administratorLogin: sqlAdminUser
-    // administratorLoginPassword: sqlPassword
     version: '12.0'
   }
 
@@ -251,14 +245,6 @@ resource secretCosmosCartsConnectionString 'Microsoft.KeyVault/vaults/secrets@20
     value: cosmosCarts.listConnectionStrings().connectionStrings[0].connectionString
   }
 }
-
-// resource secretServerPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-//   parent: keyvault
-//   name: 'sqlServerPassword'
-//   properties: {
-//     value: sqlPassword
-//   }
-// }
 
 // We need to store the CosmosDB Database and Container names in KeyVault as Secrets as well
 resource secretCosmosCartsDb 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
