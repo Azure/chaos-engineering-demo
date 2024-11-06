@@ -684,8 +684,10 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: | 
-            $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-            Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+            # $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
+            # Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+            $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
+            Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
 
       - name: deploy ui to storage
         uses: azure/CLI@v1
@@ -724,11 +726,13 @@ jobs:
     - name: Enable Static Website
       uses: azure/powershell@v2
       with: 
-        azPSVersion: "latest"
+        azPSVersion: "latest" 
         inlineScript: | 
-          $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
-          Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+          # $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
+          # Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
 
+          $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
+          Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
     - name: Upload Images
       uses: azure/CLI@v1
