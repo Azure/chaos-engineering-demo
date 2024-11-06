@@ -699,9 +699,12 @@ jobs:
         with: 
           azPSVersion: "latest" 
           inlineScript: | 
+            # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
+            # But we can only upload blobs to the storage account if we have blob contributor RBAC permission firs
             $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
             $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-
+            
+            # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
             $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
             if(-not $roleassn) {
               Write-Output "SP does not have blob data contributor role, assigning."
@@ -759,9 +762,12 @@ jobs:
       with: 
         azPSVersion: "latest" 
         inlineScript: | 
+          # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
+          # But we can only upload blobs to the storage account if we have blob contributor RBAC permission firs
           $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
           $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
 
+          # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
           $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
           if(-not $roleassn) {
             Write-Output "SP does not have blob data contributor role, assigning."
