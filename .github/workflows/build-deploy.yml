@@ -699,6 +699,10 @@ jobs:
         with: 
           azPSVersion: "latest" 
           inlineScript: | 
+            $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+            $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
+            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context
 
@@ -736,9 +740,6 @@ jobs:
       with: 
         azPSVersion: "latest" 
         inlineScript: | 
-          # $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
-          # Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
-
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
@@ -753,6 +754,10 @@ jobs:
       with: 
         azPSVersion: "latest" 
         inlineScript: | 
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
+          New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context
 
