@@ -13,6 +13,9 @@ param keyvaultName string
 @description('Log Analytics workspace ID for diagnostic settings')
 param logAnalyticsId string
 
+@description('SQLServerAdmin principal')
+param sqlServerAdmin object
+
 var sqlServerHostName = environment().suffixes.sqlServerHostname
 var sqlServerName = '${nameprefix}sqlserver'
 
@@ -38,6 +41,13 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   location: location
   properties: {
     version: '12.0'
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      login: sqlServerAdmin.name
+      sid: sqlServerAdmin.clientId
+      tenantId: sqlServerAdmin.tenantId
+    }
+
   }
 
   resource db_fw_allowazureresources 'firewallRules' = {

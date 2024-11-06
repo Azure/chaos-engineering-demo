@@ -105,11 +105,20 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: |
+          # We need to pass some info on our deployment credential to the bicep template
+          $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
+          $sqlAdminData = @{
+            name = 'service principal'
+            clientId = cred.clientId
+            tenantId = cred.tenantId
+          }
+
           # Note that the name and location of the deployment are passed in the New-AzDeployment cmdlet and not in the parameters object.
           # We also convert the string values from the variable to bool here
           $parameters = @{
             zoneRedundant = ($env:DEPLOYMENT_ZONES -eq 'true')
             deployChaos = ($env:DEPLOYMENT_CHAOS -eq 'true')
+            sqlServerAdmin = $sqlAdminData
           }
           $res = New-AzDeployment -Name $env:DEPLOYMENT_NAME -TemplateFile "src/infra/bicep/main.bicep" -Location $env:DEPLOYMENT_REGION -TemplateParameterObject $parameters
           
