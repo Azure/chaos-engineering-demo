@@ -709,7 +709,7 @@ jobs:
             }
 
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
-            Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context
+            Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
 
   deploy-static-images:
     name: 'Deploy Static images to Storage'
@@ -769,7 +769,7 @@ jobs:
           }
 
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
-          Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context
+          Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
 
   insert-sampledata:
     name: 'Insert Sample Data in Database'
