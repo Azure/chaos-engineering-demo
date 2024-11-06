@@ -543,7 +543,7 @@ jobs:
         run: |
           helm repo add chaos-mesh https://charts.chaos-mesh.org
           helm repo update
-          kubectl create ns chaos-testing
+          kubectl get ns chaos-testing || kubectl create ns chaos-testing
           helm install chaos-mesh chaos-mesh/chaos-mesh \
             --namespace=chaos-testing \
             --set chaosDaemon.runtime=containerd \
