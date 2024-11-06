@@ -689,10 +689,18 @@ jobs:
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
 
-      - name: deploy ui to storage
-        uses: azure/CLI@v1
-        with:
-          inlineScript: az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' -c '$web' -s 'website'
+      # - name: deploy ui to storage
+      #   uses: azure/CLI@v1
+      #   with:
+      #     inlineScript: az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' -c '$web' -s 'website'
+
+      - name: Upload UI to storage account
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest" 
+          inlineScript: | 
+            $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
+            Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context
 
   deploy-static-images:
     name: 'Deploy Static images to Storage'
@@ -734,12 +742,19 @@ jobs:
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
-    - name: Upload Images
-      uses: azure/CLI@v1
-      with:
-        inlineScript: |
-          az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' -c '$web' -s 'src/app/ContosoTraders.Api.Images'
+    # - name: Upload Images
+    #   uses: azure/CLI@v1
+    #   with:
+    #     inlineScript: |
+    #       az storage blob sync --auth-mode login --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' -c '$web' -s 'src/app/ContosoTraders.Api.Images'
     
+    - name: Upload Images
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest" 
+        inlineScript: | 
+          $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
+          Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context
 
   insert-sampledata:
     name: 'Insert Sample Data in Database'
