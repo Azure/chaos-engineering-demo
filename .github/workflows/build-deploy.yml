@@ -109,8 +109,8 @@ jobs:
           $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
           $sqlAdminData = @{
             name = 'service principal'
-            clientId = cred.clientId
-            tenantId = cred.tenantId
+            clientId = $cred.clientId
+            tenantId = $cred.tenantId
           }
 
           # Note that the name and location of the deployment are passed in the New-AzDeployment cmdlet and not in the parameters object.
