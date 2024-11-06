@@ -701,7 +701,12 @@ jobs:
           inlineScript: | 
             $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
             $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+
+            $roleassn = Get-AzRoleAssignment -ObjectId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+            if(-not $roleassn) {
+              Write-Output "SP does not have blob data contributor role, assigning."
+              New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+            }
 
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context
@@ -756,7 +761,12 @@ jobs:
         inlineScript: | 
           $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
           $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
-          New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+
+          $roleassn = Get-AzRoleAssignment -ObjectId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+          if(-not $roleassn) {
+            Write-Output "SP does not have blob data contributor role, assigning."
+            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $storageAccount.id
+          }
 
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context
