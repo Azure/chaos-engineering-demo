@@ -543,11 +543,11 @@ jobs:
         run: |
           helm repo add chaos-mesh https://charts.chaos-mesh.org
           helm repo update
-          kubectl get ns chaos-testing || kubectl create ns chaos-testing
-          helm install chaos-mesh chaos-mesh/chaos-mesh \
-            --namespace=chaos-testing \
-            --set chaosDaemon.runtime=containerd \
-            --set chaosDaemon.socketPath=/run/containerd/containerd.sock                
+          kubectl get ns chaos-testing || kubectl create ns chaos-testing && \
+            helm install chaos-mesh chaos-mesh/chaos-mesh \
+              --namespace=chaos-testing \
+              --set chaosDaemon.runtime=containerd \
+              --set chaosDaemon.socketPath=/run/containerd/containerd.sock                
 
   deploy-carts-api:
     name: 'Deploy Carts API to ACA'
