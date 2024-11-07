@@ -4,9 +4,8 @@ on:
     pull_request:
         types: [ opened, edited, reopened]
         branches: [ main ]
-        
+     
     workflow_dispatch:
-
 
 jobs:
   run-build-deploy:
