@@ -9,6 +9,7 @@ on:
 
 jobs:
   run-build-deploy:
+    name: 'Run Build and Deploy pipeline'
     uses: ./.github/workflows/build-deploy.yml
     with:
       DEPLOYMENT_NAME: 'ctcpr${{ github.event.number }}'
@@ -46,8 +47,8 @@ jobs:
           }
 
     - name: Delete Resource Group
-      uses: azure/powershell@v2
+      uses: azure/cli@v2
       with: 
         azPSVersion: "latest"
         inlineScript: | 
-          az group delete --name $env:RG_NAME --yes --no-wait
+          az group delete --name '${{ env.RG_NAME }}' --yes --no-wait
