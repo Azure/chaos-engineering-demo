@@ -11,6 +11,8 @@ jobs:
   prepare-test:
     name: 'Prepare Test Run'
     runs-on: ubuntu-latest
+    outputs:
+      DEPLOYMENTNAME: ${{ steps.make-name.outputs.DEPLOYMENTNAME }}
     steps:
     - name: Compose deployment name
       uses: azure/powershell@v2
@@ -33,7 +35,7 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     needs: [prepare-test]
     with:
-      DEPLOYMENT_NAME: '${{ needs.prepare-test.make-name.outputs.DEPLOYMENTNAME }}'
+      DEPLOYMENT_NAME: '${{ needs.prepare-test.outputs.DEPLOYMENTNAME }}'
     secrets: inherit
     
   delete-resources:
