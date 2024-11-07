@@ -108,7 +108,7 @@ jobs:
           # We need to pass some info on our deployment credential to the bicep template
           $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
           $sqlAdminData = @{
-            name = 'github'
+            name = 'github' # This value isn't validated anywhere, just used to show to a human who this objectId belongs to
             clientId = $cred.clientId
             tenantId = $cred.tenantId
           }
@@ -812,8 +812,8 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: | 
-          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
-          az sql server ad-admin create --display-name 'github-sp' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
+          # $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          # az sql server ad-admin create --display-name 'github-sp' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
 
           $connectionStringProducts = ("Server=tcp:{0}.database.windows.net,1433;Initial Catalog={1};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication='Active Directory Default';" -f $env:SQL_SERVERNAME, $env:SQL_PRODUCTSDATABASENAME)
           ("{0}={1}" -f "SQL_CONNECTION_STRING_PRODUCTS", $connectionStringProducts) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -835,7 +835,8 @@ jobs:
           $identityClientId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query clientId --output tsv)
 
                     
-          # Generate SID to bypass directory read permission
+          # Generate SID. By doing this, the server will not have to look up the SID in the directory,
+          # for which the current security context does not have permission. 
           $sid = "0x" + [System.BitConverter]::ToString(([guid]$identityClientId).ToByteArray()).Replace("-", "")
           
           # Create SQL script for creating user and assigning the role
