@@ -18,11 +18,11 @@ jobs:
         azPSVersion: "latest"
         inlineScript: | 
           if($env:GITHUB_EVENT_NAME -eq "pull_request") {
-            $deploymentName = "ctpr${{ github.event.number }}
+            $deploymentName = "ctpr${{ github.event.number }}"
           }
           else {
             $sha = $env:GITHUB_SHA.Substring(0, 4)
-            $deploymentName = ("ct{0}" -f $sha)
+            $deploymentName = "ct$sha"
           }
           ("DEPLOYMENTNAME={0}" -f $deploymentName) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           
