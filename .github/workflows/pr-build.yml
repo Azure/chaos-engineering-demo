@@ -1,0 +1,51 @@
+name: Test Build for PR
+
+on:
+    pull_request:
+        types: [ opened, edited, reopened]
+        branches: [ main ]
+
+jobs:
+  run-build-deploy:
+    uses: ./.github/workflows/build-deploy.yml
+    with:
+      DEPLOYMENT_NAME: 'ctc-pr-${{ github.event.number }}'
+    secrets: inherit
+    
+  delete-resources:
+    name: 'Delete Azure Resources'
+    # Run this job even if the previous job fails:
+    if: always() 
+    needs: [run-build-deploy]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        enable-AzPSSession: true 
+
+    - name: Download Deployment Output
+      uses: actions/download-artifact@v4
+      with:
+        name: deploymentOutput
+
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+    - name: Delete Resource Group
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          az group delete --name $env:RG_NAME --yes --no-wait

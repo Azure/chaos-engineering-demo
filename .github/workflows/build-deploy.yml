@@ -37,9 +37,6 @@ on:
     paths-ignore:
       - '*.md'
       - '*.png'
-  pull_request:
-    types: [ opened, edited, reopened, review_requested ]
-    branches: [ main ]
 
   # We also want to be able to run this manually from Github
   workflow_dispatch:
@@ -857,40 +854,3 @@ jobs:
       with:
         connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
         path: ./user_creation.sql
-
-  delete-resources:
-    name: 'Delete Azure Resources'
-    if: ${{ vars.DELETE_RESOURCES_AFTER_WORKFLOW == 'true' }}
-    needs: [deploy-infra, deploy-products-api, deploy-carts-api, deploy-website, deploy-static-images, insert-sampledata] # After everything is finished
-    runs-on: ubuntu-latest
-    steps:
-    - name: 'Checkout GitHub Action'
-      uses: actions/checkout@main
-
-    - name: 'Login via Azure CLI'
-      uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-        enable-AzPSSession: true 
-
-    - name: Download Deployment Output
-      uses: actions/download-artifact@v4
-      with:
-        name: deploymentOutput
-
-    - name: Parse Deployment Output
-      uses: azure/powershell@v2
-      with: 
-        azPSVersion: "latest"
-        inlineScript: | 
-          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
-          $deploymentOutput.psobject.properties | ForEach-Object {
-            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-
-    - name: Delete Resource Group
-      uses: azure/powershell@v2
-      with: 
-        azPSVersion: "latest"
-        inlineScript: | 
-          az group delete --name $env:RG_NAME --yes --no-wait
