@@ -38,6 +38,13 @@ on:
       - '*.md'
       - '*.png'
 
+  workflow_call:
+    inputs:
+      DEPLOYMENT_NAME:
+        required: true
+        type: string
+        description: 'The deployment name'
+
   # We also want to be able to run this manually from Github
   workflow_dispatch:
 
