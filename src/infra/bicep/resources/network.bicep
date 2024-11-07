@@ -30,9 +30,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-08-01' = {
         name: aksSubnetName
         properties: {
           addressPrefix: aksSubnetPrefix
-          // networkSecurityGroup: {
-          //   id: resourceId('Microsoft.Network/networkSecurityGroups', aksSubnetNSGName)
-          // }
+           networkSecurityGroup: {
+             id: resourceId('Microsoft.Network/networkSecurityGroups', aksSubnetNSGName)
+           }
         }
       }
       {
@@ -72,6 +72,19 @@ resource nsgAks 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
   properties: {
     securityRules: [
       {
+        name: 'Allow-Inbound-FrontDoor'
+        properties: {
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+          priority: 1000          
+          sourceAddressPrefix: 'AzureFrontDoor.Backend' 
+          sourcePortRange: '*'
+        }
+      }
+      {
         name: 'Allow-Inbound-Internet-80'
         properties: {
           access: 'Allow'
@@ -79,7 +92,7 @@ resource nsgAks 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           protocol: 'Tcp'
           destinationAddressPrefix: aksSubnetPrefix
           destinationPortRange: '80'
-          priority: 1000          
+          priority: 1001       
           sourceAddressPrefix: 'Internet'
           sourcePortRange: '*'
         }
@@ -92,7 +105,7 @@ resource nsgAks 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           protocol: 'Tcp'
           destinationAddressPrefix: aksSubnetPrefix
           destinationPortRange: '443'
-          priority: 1001          
+          priority: 1002          
           sourceAddressPrefix: 'Internet'
           sourcePortRange: '*'
         }
@@ -107,6 +120,19 @@ resource nsgAca 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
   properties: {
     securityRules: [
       {
+        name: 'Allow-Inbound-FrontDoor'
+        properties: {
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+          priority: 1000          
+          sourceAddressPrefix: 'AzureFrontDoor.Backend' 
+          sourcePortRange: '*'
+        }
+      }
+      {
         name: 'Allow-Inbound-Internet-80'
         properties: {
           access: 'Allow'
@@ -114,7 +140,7 @@ resource nsgAca 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           protocol: 'Tcp'
           destinationAddressPrefix: acaSubnetPrefix
           destinationPortRange: '80'
-          priority: 1000          
+          priority: 1001         
           sourceAddressPrefix: 'Internet'
           sourcePortRange: '*'
         }
@@ -127,7 +153,7 @@ resource nsgAca 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           protocol: 'Tcp'
           destinationAddressPrefix: acaSubnetPrefix
           destinationPortRange: '443'
-          priority: 1001
+          priority: 1002
           sourceAddressPrefix: 'Internet'
           sourcePortRange: '*'
         }

@@ -7,7 +7,7 @@ name: Build and Deploy Application
 env:
   # This is the global resource prefix for this deployment
   # Use lower case letters and numbers only and no more than 6 chars
-  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+  DEPLOYMENT_NAME: ${{ inputs.DEPLOYMENT_NAME != null && inputs.DEPLOYMENT_NAME || vars.DEPLOYMENT_NAME }}
 
   # Azure region to which the resources will be deployed
   DEPLOYMENT_REGION: ${{ vars.DEPLOYMENT_REGION }}
@@ -34,9 +34,16 @@ on:
   #Triggers the workflow on push events on the main branch
   push:
     branches: [ main ]
-  #   paths-ignore:
-  #     - '*.md'
-  #     - '*.png'
+    paths-ignore:
+      - '*.md'
+      - '*.png'
+
+  workflow_call:
+    inputs:
+      DEPLOYMENT_NAME:
+        required: true
+        type: string
+        description: 'The deployment name'
 
   # We also want to be able to run this manually from Github
   workflow_dispatch:
@@ -105,11 +112,20 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: |
+          # We need to pass some info on our deployment credential to the bicep template
+          $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
+          $sqlAdminData = @{
+            name = 'github' # This value isn't validated anywhere, just used to show to a human who this objectId belongs to
+            clientId = $cred.clientId
+            tenantId = $cred.tenantId
+          }
+
           # Note that the name and location of the deployment are passed in the New-AzDeployment cmdlet and not in the parameters object.
           # We also convert the string values from the variable to bool here
           $parameters = @{
             zoneRedundant = ($env:DEPLOYMENT_ZONES -eq 'true')
             deployChaos = ($env:DEPLOYMENT_CHAOS -eq 'true')
+            sqlServerAdmin = $sqlAdminData
           }
           $res = New-AzDeployment -Name $env:DEPLOYMENT_NAME -TemplateFile "src/infra/bicep/main.bicep" -Location $env:DEPLOYMENT_REGION -TemplateParameterObject $parameters
           
@@ -123,6 +139,16 @@ jobs:
           "### Azure resource deployment complete :rocket:" | Out-File -Append -FilePath $Env:GITHUB_STEP_SUMMARY
           "#### Your Contoso Traders website can be found at https://$endpointHostname and will start working once the application deployment is complete." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
           "#### If you want to enable authentication for your website, ensure that https://$endpointHostname is added as a redirect URI to your Entra application." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
+
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
 
       # The private key of the SSH key pair should be stored in keyvault. 
       # If it doesn't exist, we did not regenerate during this deployment and we can move on.
@@ -138,9 +164,8 @@ jobs:
             exit
           }
 
-          # Find out the name of the Keyvault:
-          $deploymentOutput = Get-Content output.deployment.json | ConvertFrom-Json -Depth 10
-          $keyvaultName = $deploymentOutput.keyvault_Name.Value
+          # Get the keyvault name from the environment
+          $keyvaultName = $env:KEYVAULT_NAME
 
           # Give myself access to it:
           $appId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
@@ -150,13 +175,30 @@ jobs:
           $key = Get-Content $keyPath -Raw | ConvertTo-SecureString -AsPlainText -Force
           Set-AzKeyVaultSecret -VaultName $keyvaultName -Name "ssh-private-key" -SecretValue $key   
 
+      # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
+      # But we can only upload blobs to the storage account if we have blob contributor RBAC permission first
+      # We need this in later steps, but do it now to give the permission time to propagate.
+    - name: Assign Blob Data Contributor Role to SP
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest" 
+        inlineScript: |     
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          $resourceGroup = Get-AzResourceGroup -Name $env:RG_NAME
+          
+          # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
+          $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          if(-not $roleassn) {
+            Write-Output "SP does not have blob data contributor role, assigning."
+            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          }
+
       # The deployment output is saved in a file. It must be uploaded as an artifact so it can be used in later jobs.
     - name: Save deployment output
       uses: actions/upload-artifact@v4
       with:
         name: deploymentOutput
         path: output.deployment.json
-
 
   build-products-api:
     name: 'Build Products API'
@@ -199,12 +241,21 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: |
+          # Set -e ensures the script stops execution when an error occurs
+          Set-StrictMode -Version Latest
+          
           $repoName = $env:ACR_REPO_PRODUCTS_NAME
           $version = "${{ github.sha }}"
           $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+          
           Write-Output "Building image with tag $tag"
           $cmd = "docker build -f ./src/app/ContosoTraders.Api.Products/Dockerfile -t $tag src/app"
-          Invoke-Expression $cmd
+          $buildResult = Invoke-Expression $cmd
+          # Check the exit code of the Docker build, if it fails, stop the script and return an error
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Docker build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
 
       # The container registry was deployed with the infrastructure. AKS and ACA will pull from here. 
     - name: Push Container to ACR
@@ -216,7 +267,6 @@ jobs:
           Connect-AzContainerRegistry -Name $env:ACR_NAME
           $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
           Invoke-Expression $cmd
-
 
   build-carts-api:
     name: 'Build Carts API'
@@ -251,12 +301,22 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: |
+            # Set -e ensures the script stops execution when an error occurs
+            Set-StrictMode -Version Latest
+            
             $repoName = $env:ACR_REPO_CARTS_NAME
             $version = "${{ github.sha }}"
             $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+            
             Write-Output "Building image with tag $tag"
             $cmd = "docker build -f ./src/app/ContosoTraders.Api.Carts/Dockerfile -t $tag src/app"
-            Invoke-Expression $cmd
+            $buildResult = Invoke-Expression $cmd
+            
+            # Check the exit code of the Docker build, if it fails, stop the script and return an error
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Docker build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
       
       - name: Push Container to ACR
         uses: azure/powershell@v2
@@ -267,8 +327,7 @@ jobs:
             Connect-AzContainerRegistry -Name $env:ACR_NAME
             $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
             Invoke-Expression $cmd
-
-     
+   
   deploy-products-api:
     name: 'Deploy Products API to AKS'
     needs: [deploy-infra, build-products-api]
@@ -343,6 +402,64 @@ jobs:
           secret-name: "contoso-traders-mi-clientid"
           string-data: '{ "contoso-traders-mi-clientid" : "" }'
 
+      - name: Prepare Workload ID
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Get the OIDC Issuer URL
+            $AKS_OIDC_ISSUER=(az aks show -n ${{env.AKSCLUSTER_NAME}} -g ${{env.RG_NAME}} --query "oidcIssuerProfile.issuerUrl" -otsv)
+
+            $MANAGED_IDENTITY_NAME="${{env.DEPLOYMENT_NAME}}-wi"
+            # Create the managed identity
+            az identity create --name $MANAGED_IDENTITY_NAME --resource-group ${{env.RG_NAME}} --location ${{env.DEPLOYMENT_REGION}}
+
+            # Get identity client ID
+            $USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'clientId' -o tsv)
+            $USER_ASSIGNED_OBJ_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'principalId' -o tsv)
+            
+            Write-Output "Workload Identity clientId: $USER_ASSIGNED_CLIENT_ID objectId: $USER_ASSIGNED_OBJ_ID "
+            ("{0}={1}" -f "USER_ASSIGNED_CLIENT_ID", $USER_ASSIGNED_CLIENT_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "USER_ASSIGNED_OBJ_ID", $USER_ASSIGNED_OBJ_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "AKS_OIDC_ISSUER", $AKS_OIDC_ISSUER) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "MANAGED_IDENTITY_NAME", $MANAGED_IDENTITY_NAME) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create Service account to federate with managed identity
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+        env:
+          USER_ASSIGNED_CLIENT_ID: ${{ env.USER_ASSIGNED_CLIENT_ID }}
+
+      - name: Create Service Account for Federate with Managed Identity
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+          force: true
+
+      - name: Federate the Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az identity federated-credential create --name wi-federated-id --identity-name ${{env.MANAGED_IDENTITY_NAME}} --resource-group ${{env.RG_NAME}} --issuer ${{env.AKS_OIDC_ISSUER}} --subject system:serviceaccount:default:workload-sa
+      
+      - name: Assign roles to Workload Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az role assignment create --assignee-object-id ${{env.USER_ASSIGNED_OBJ_ID}} --role "Key Vault Secrets User" --scope ${{env.KEYVAULT_ID}} --assignee-principal-type ServicePrincipal
+
+      - name: Assign permission access policy to KeyVault
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az keyvault set-policy --name ${{env.KEYVAULT_NAME}} --object-id ${{env.USER_ASSIGNED_OBJ_ID}} --secret-permissions get list --key-permissions get list --certificate-permissions get list
+      
       - name: Apply Deployment Manifest
         uses: Azure/k8s-deploy@v5
         with:
@@ -466,11 +583,15 @@ jobs:
         run: |
           helm repo add chaos-mesh https://charts.chaos-mesh.org
           helm repo update
-          kubectl create ns chaos-testing
-          helm install chaos-mesh chaos-mesh/chaos-mesh \
-            --namespace=chaos-testing \
-            --set chaosDaemon.runtime=containerd \
-            --set chaosDaemon.socketPath=/run/containerd/containerd.sock                
+          kubectl get ns chaos-testing || kubectl create ns chaos-testing
+          if ! helm status chaos-mesh -n chaos-testing; then
+            helm install chaos-mesh chaos-mesh/chaos-mesh \
+              --namespace=chaos-testing \
+              --set chaosDaemon.runtime=containerd \
+              --set chaosDaemon.socketPath=/run/containerd/containerd.sock
+          else
+            echo "Chaos Mesh is already installed"
+          fi 
 
   deploy-carts-api:
     name: 'Deploy Carts API to ACA'
@@ -507,8 +628,7 @@ jobs:
           inlineScript: |
             az config set extension.use_dynamic_install=yes_without_prompt
             az containerapp update -n ${{ env.ACA_APPNAME }} -g ${{ env.RG_NAME }} --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.ACR_REPO_CARTS_NAME }}:${{ github.sha }}
-
-            
+          
   build-website:
       name: 'Build Website'
       needs: [deploy-products-api, deploy-carts-api]
@@ -566,7 +686,6 @@ jobs:
             name: websiteBuild
             path: src/app/ContosoTraders.Ui.Website/build
     
-
   deploy-website:
     name: 'Deploy Website to Storage'
     needs: [deploy-infra, build-website]
@@ -607,13 +726,16 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: | 
-            $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_UI
-            Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+            $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
+            Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
 
-      - name: deploy ui to storage
-        uses: azure/CLI@v1
-        with:
-          inlineScript: az storage blob sync --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' -c '$web' -s 'website'
+      - name: Upload UI to storage account
+        run: |
+          az storage blob sync \
+            --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' \
+            --container '$web' \
+            --source 'website' \
+            --auth-mode login
 
   deploy-static-images:
     name: 'Deploy Static images to Storage'
@@ -647,22 +769,23 @@ jobs:
     - name: Enable Static Website
       uses: azure/powershell@v2
       with: 
-        azPSVersion: "latest"
+        azPSVersion: "latest" 
         inlineScript: | 
-          $storageAccount = Get-AzStorageAccount -ResourceGroupName $env:RG_NAME -AccountName $env:STORAGE_ACCOUNTNAME_IMAGES
-          Enable-AzStorageStaticWebsite -Context $storageAccount.Context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
-
+          $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
+          Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
-    - name: Upload Images
-      uses: azure/CLI@v1
-      with:
-        inlineScript: |
-          az storage blob sync --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' -c '$web' -s 'src/app/ContosoTraders.Api.Images'
-    
+    - name: Upload UI to storage account
+      run: |
+        az storage blob sync \
+          --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' \
+          --container '$web' \
+          --source 'src/app/ContosoTraders.Api.Images' \
+          --auth-mode login
+
 
   insert-sampledata:
     name: 'Insert Sample Data in Database'
-    needs: [deploy-infra]
+    needs: [deploy-infra, deploy-products-api]
     runs-on: ubuntu-latest
     steps:
     - name: 'Checkout GitHub Action'
@@ -695,7 +818,7 @@ jobs:
         azPSVersion: "latest"
         inlineScript: | 
           $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
-          az sql server ad-admin create --display-name 'github-sp' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
+          az sql server ad-admin create --display-name 'github' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
 
           $connectionStringProducts = ("Server=tcp:{0}.database.windows.net,1433;Initial Catalog={1};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication='Active Directory Default';" -f $env:SQL_SERVERNAME, $env:SQL_PRODUCTSDATABASENAME)
           ("{0}={1}" -f "SQL_CONNECTION_STRING_PRODUCTS", $connectionStringProducts) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -705,3 +828,37 @@ jobs:
       with:
         connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
         path: ./src/app/ContosoTraders.Api.Products/Migration/productsdb.sql
+
+    - name: Prepare Workload User SQL
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |       
+          # Get the Managed Identity (Entra Workload) principal ID
+          $managedIdentityName="${{env.DEPLOYMENT_NAME}}-wi"
+          $identityPrincipalId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query principalId --output tsv)
+          $identityClientId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query clientId --output tsv)
+
+                    
+          # Generate SID. By doing this, the server will not have to look up the SID in the directory,
+          # for which the current security context does not have permission. 
+          $sid = "0x" + [System.BitConverter]::ToString(([guid]$identityClientId).ToByteArray()).Replace("-", "")
+          
+          # Create SQL script for creating user and assigning the role
+          $sqlScript = @"
+                  CREATE USER  [$managedIdentityName] WITH SID = $sid, TYPE = E;
+                  ALTER ROLE db_datareader ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_datawriter ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_ddladmin  ADD MEMBER [$managedIdentityName];
+                  GO
+          "@
+          Set-Content -Path ./user_creation.sql -Value $sqlScript
+          Get-Content -Path ./user_creation.sql
+
+    - name: Add Workload User ID to DB
+      uses: azure/sql-action@v2
+      with:
+        connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
+        path: ./user_creation.sql
+
+        

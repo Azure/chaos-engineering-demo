@@ -5,7 +5,7 @@ The solution is deployed using Github Actions. Tasks that require access to your
 To create an identity for your deployments, create a service principal as follows. For app name, you can use any name, e.g. 'ChaosTesting-GithubDeployment'
 
 ```shell
-az ad sp create-for-rbac --name {app-name} --role contributor --scopes /subscriptions/{subscription-id}
+az ad sp create-for-rbac --name {app-name} --role owner --scopes /subscriptions/{subscription-id}
 ```
 
 The command will result in an output, such as the following: 

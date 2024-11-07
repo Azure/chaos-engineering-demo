@@ -38,3 +38,4 @@ resource acrDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
 }
 
 output keyvaultName string = keyvault.name  
+output keyvaultId string = keyvault.id  

@@ -21,16 +21,16 @@ resource chaosakstarget 'Microsoft.Chaos/targets@2022-10-01-preview' = {
 
   // capability: aks (pod failures)
   resource chaosakscappod 'capabilities' = {
-    name: 'PodChaos-2.1'
+    name: 'PodChaos-2.2'
   }
   // capability: aks (stress load)
   resource chaosakscapstress 'capabilities' = {
-    name: 'StressChaos-2.1'
+    name: 'StressChaos-2.2'
   }
 }
 
 // chaos experiment: aks (chaos mesh)
-resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
+resource chaosaksexperiment 'Microsoft.Chaos/experiments@2024-03-22-preview' = {
   name: experimentName
   location: location  
   identity: {
@@ -48,8 +48,7 @@ resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
           }
         ]
       }
-    ]
-    startOnCreation: false
+    ]    
     steps: [
       {
         name: 'step1'
@@ -58,7 +57,7 @@ resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
             name: 'branch1'
             actions: [
               {
-                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:podChaos/2.1'
+                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:podChaos/2.2'
                 type: 'continuous'
                 selectorId: chaosAksSelectorId
                 duration: 'PT5M'
@@ -70,7 +69,7 @@ resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
                 ]
               }
               {
-                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:stressChaos/2.1'
+                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:podChaos/2.2'
                 type: 'continuous'
                 selectorId: chaosAksSelectorId
                 duration: 'PT5M'
@@ -82,7 +81,7 @@ resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
                 ]
               }
               {
-                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:stressChaos/2.1'
+                name: 'urn:csci:microsoft:azureKubernetesServiceChaosMesh:podChaos/2.2'
                 type: 'continuous'
                 selectorId: chaosAksSelectorId
                 duration: 'PT5M'
@@ -102,18 +101,34 @@ resource chaosaksexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
 }
 
 // Define the role definition for the Chaos experiment
-resource chaosAksRoleDefinition 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+resource chaosAksRoleDefinitionAdmin 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   scope: aks
   // "Azure Kubernetes Service Cluster Admin Role" -- see https://learn.microsoft.com/azure/role-based-access-control/built-in-roles 
   name: '0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8'
 }
 
+resource chaosAksRoleDefinitionUser 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: aks
+  // "Azure Kubernetes Service Cluster User Role" -- see https://learn.microsoft.com/azure/role-based-access-control/built-in-roles 
+  name: '4abbcc35-e782-43d8-92c5-2d3f1bd2253f'
+}
+
 // Define the role assignment for the Chaos experiment - AKS
-resource chaosRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {  
-  name: guid(aks.id, chaosaksexperiment.id, chaosAksRoleDefinition.id) 
+resource chaosRoleAssignmentAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {  
+  name: guid(aks.id, chaosaksexperiment.id, chaosAksRoleDefinitionAdmin.id) 
   scope: aks
   properties: {
-    roleDefinitionId: chaosAksRoleDefinition.id
+    roleDefinitionId: chaosAksRoleDefinitionAdmin.id
+    principalId: chaosaksexperiment.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource chaosRoleAssignmentUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {  
+  name: guid(aks.id, chaosaksexperiment.id, chaosAksRoleDefinitionUser.id) 
+  scope: aks
+  properties: {
+    roleDefinitionId: chaosAksRoleDefinitionUser.id
     principalId: chaosaksexperiment.identity.principalId
     principalType: 'ServicePrincipal'
   }
