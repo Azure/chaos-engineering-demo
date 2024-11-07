@@ -96,12 +96,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-03-02-preview' = {
     agentPoolProfiles: [
       {
         name: 'agentpool'
-        osDiskSizeGB: 0 // Specifying 0 will apply the default disk size for that agentVMSize.
+        osDiskSizeGB: 0 // Specifying 0 will apply the default disk size for that agentVMSize. 
         count: 1
         enableAutoScaling: aksAutoScaling
         minCount: 1 // minimum node count
         maxCount: 3 // maximum node count
-        vmSize: 'standard_b2s'
+        vmSize: 'standard_b2pls_v2'
         osType: 'Linux'
         mode: 'System'
         availabilityZones: zoneRedundant ? ['1', '2', '3'] : []

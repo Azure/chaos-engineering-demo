@@ -36,7 +36,7 @@ module chaos3 '../chaos-experiments/chaos-aks-degradation.bicep' = {
 }
 
 // Deployment Script: Get the VMSS Cluster Name
-module deploymentScript '../chaos-experiments/aks-deploymentscript.bicep' = {
+module deploymentScript '../utils/aks-deploymentscript.bicep' = {
   name: '${nameprefix}-deploymentScript'
   params: {
     nameprefix: nameprefix
@@ -59,6 +59,15 @@ module chaos4 '../chaos-experiments/chaos-zone-down.bicep' = {
     nameprefix: nameprefix
     location: location
     vmssClusterName: deploymentScript.outputs.vmssClusterName
+  }
+}
+
+// Fifth experiment: Deny NSG access to Cart
+module chaos5 '../chaos-experiments/chaos-nsg-deny.bicep' = {
+  name: '${nameprefix}-chaos-5'
+  params: {
+    nameprefix: nameprefix
+    location: location
   }
 }
 

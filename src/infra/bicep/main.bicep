@@ -14,6 +14,8 @@ param zoneRedundant bool = false
 
 param deployChaos bool = true
 
+@description('SQLServerAdmin principal')
+param sqlServerAdmin object
 
 // The main resource group where all resources will be created
 resource rg 'Microsoft.Resources/resourceGroups@2020-06-01' = {
@@ -58,7 +60,7 @@ module storage './resources/storage.bicep' = {
   scope: rg
   params: {
     nameprefix: toLower(name)
-    location: rg.location
+    location: rg.location 
     zoneRedundant: zoneRedundant
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
   }
@@ -92,6 +94,7 @@ module databases './resources/databases.bicep' = {
     zoneRedundant: zoneRedundant
     keyvaultName: keyvault.outputs.keyvaultName
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
+    sqlServerAdmin: sqlServerAdmin
   }
   dependsOn: [
     keyvault
