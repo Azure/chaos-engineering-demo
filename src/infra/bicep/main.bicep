@@ -14,6 +14,8 @@ param zoneRedundant bool = false
 
 param deployChaos bool = true
 
+@description('SQLServerAdmin principal')
+param sqlServerAdmin object
 
 // The main resource group where all resources will be created
 resource rg 'Microsoft.Resources/resourceGroups@2020-06-01' = {
@@ -58,7 +60,7 @@ module storage './resources/storage.bicep' = {
   scope: rg
   params: {
     nameprefix: toLower(name)
-    location: rg.location
+    location: rg.location 
     zoneRedundant: zoneRedundant
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
   }
@@ -92,6 +94,7 @@ module databases './resources/databases.bicep' = {
     zoneRedundant: zoneRedundant
     keyvaultName: keyvault.outputs.keyvaultName
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
+    sqlServerAdmin: sqlServerAdmin
   }
   dependsOn: [
     keyvault
@@ -112,6 +115,40 @@ module frontdoor './resources/frontdoor.bicep' = {
   }
 }
 
+// We only deploy the User Assigned Manage Identity if deployChaos is set to true
+module uami './utils/uami.bicep' = if (deployChaos) {
+  name: '${rg.name}-uami'
+  scope: rg
+  params: {
+    nameprefix: toLower(name)
+    location: rg.location
+  }
+}
+
+// We only deploy the Role Assigment for the main RG if deployChaos is set to true
+module roleassigmentrg './utils/uami-roleassigment-rg.bicep' = if (deployChaos) {
+  name: '${rg.name}-roleassigmentrg'
+  scope: rg
+  params: {
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
+    uamiRg: rg.name
+  }
+}
+
+// We only deploy the Role Assigment for the VMSS RG if deployChaos is set to true
+module roleassigmentrgvmss './utils/uami-roleassigment-rg.bicep' = if (deployChaos) {
+  name: '${rg.name}-roleassigmentrgvmss'
+  scope: resourceGroup('${name}-aks-rg')
+  params: {
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
+    uamiRg: rg.name
+  }
+  // We want to deploy this after the AKS:
+  dependsOn: [
+    containers
+  ]
+}
+
 // We only deploy the Chaos experiments if deployChaos is set to true
 module chaos './resources/chaos.bicep' = if (deployChaos) {
   name: '${rg.name}-chaos'
@@ -119,6 +156,8 @@ module chaos './resources/chaos.bicep' = if (deployChaos) {
   params: {
     nameprefix: toLower(name)
     location: rg.location
+    aksClusterResourceGroup: containers.outputs.aksClusterResourceGroup
+    uamiName: (deployChaos) ? uami.outputs.userAssignedIdentityName : ''
   }
   // We want to deploy this last:
   dependsOn: [
@@ -140,6 +179,7 @@ output frontdoor_Name string = frontdoor.outputs.frontDoorName
 output frontdoor_Endpoint string = frontdoor.outputs.frontDoorEndpointHostName
 output acr_Name string = containers.outputs.acrName
 output keyvault_Name string = keyvault.outputs.keyvaultName
+output keyvault_ID string = keyvault.outputs.keyvaultId
 output aksCluster_Name string = containers.outputs.aksClusterName
 output aksCluster_KubeletIdentityId string = containers.outputs.aksClusterKubeletIdentity
 output aca_AppName string = containers.outputs.acaAppName

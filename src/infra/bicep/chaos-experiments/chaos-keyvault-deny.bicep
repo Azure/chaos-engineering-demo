@@ -76,3 +76,21 @@ resource chaoskvexperiment 'Microsoft.Chaos/experiments@2022-10-01-preview' = {
     ]
   }
 }
+
+// Define the role definition for the Chaos experiment
+resource chaosKVRoleDefinition 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: keyvault
+  // "Key Vault Contributor" -- see https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles#key-vault-contributor 
+  name: 'f25e0fa2-a7c8-4377-a976-54943a77a395'
+}
+
+// Define the role assignment for the Chaos experiment - Key Vault
+resource chaosRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {  
+  name: guid(keyvault.id, chaoskvexperiment.id, chaosKVRoleDefinition.id) 
+  scope: keyvault
+  properties: {
+    roleDefinitionId: chaosKVRoleDefinition.id
+    principalId: chaoskvexperiment.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
