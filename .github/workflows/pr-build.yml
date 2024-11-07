@@ -11,7 +11,7 @@ jobs:
   run-build-deploy:
     uses: ./.github/workflows/build-deploy.yml
     with:
-      DEPLOYMENT_NAME: 'ctc-pr-${{ github.event.number }}'
+      DEPLOYMENT_NAME: 'ctcpr${{ github.event.number }}'
     secrets: inherit
     
   delete-resources:
