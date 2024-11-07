@@ -1,0 +1,864 @@
+
+# Secrets required to be in place:
+# - AZURE_CREDENTIALS
+
+name: Build and Deploy Application
+
+env:
+  # This is the global resource prefix for this deployment
+  # Use lower case letters and numbers only and no more than 6 chars
+  DEPLOYMENT_NAME: ${{ inputs.DEPLOYMENT_NAME != null && inputs.DEPLOYMENT_NAME || vars.DEPLOYMENT_NAME }}
+
+  # Azure region to which the resources will be deployed
+  DEPLOYMENT_REGION: ${{ vars.DEPLOYMENT_REGION }}
+
+  # Whether to use availability zones in the deployment. You would typically enable this for production deployments,
+  # but it is not required for demos. 
+  DEPLOYMENT_ZONES: ${{ vars.DEPLOYMENT_ZONES }}
+
+  # Do we want to deploy the Chaos Experiments?
+  # This is included as a setting, because the Chaos Workshop may prefer to deploy the experiments afterwards.
+  DEPLOYMENT_CHAOS: ${{ vars.DEPLOYMENT_CHAOS }}
+
+  # Client ID of the application we'll use to handle logins on the website
+  # If this value remains empty, authentication will not be used. 
+  WEBSITE_CLIENTID: ${{ VARS.WEBSITE_CLIENTID }}
+
+  # Repo name for products API containers
+  ACR_REPO_PRODUCTS_NAME: 'products-api'
+
+  # Repo name for carts API containers
+  ACR_REPO_CARTS_NAME: 'carts-api'
+
+on:
+  #Triggers the workflow on push events on the main branch
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - '*.png'
+
+  workflow_call:
+    inputs:
+      DEPLOYMENT_NAME:
+        required: true
+        type: string
+        description: 'The deployment name'
+
+  # We also want to be able to run this manually from Github
+  workflow_dispatch:
+
+jobs:
+  deploy-infra:
+    name: 'Deploy Azure Resources'
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+
+    - name: 'Validate Parameters'
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |
+          if($env:DEPLOYMENT_NAME -notmatch "^[a-z][a-z0-9]{2,5}$") { 
+            throw "DEPLOYMENT_NAME must be 3-6 characters long and start with a letter, no whitespace or special characters allowed, and only lowercase letters." 
+            }
+
+          if($env:DEPLOYMENT_REGION -eq '') {
+            throw "DEPLOYMENT_REGION must be set"
+          }
+
+          if($env:DEPLOYMENT_ZONES -ne 'true' -and $env:DEPLOYMENT_ZONES -ne 'false') {
+            throw "DEPLOYMENT_ZONES must be 'true' or 'false'"
+          }
+
+          if($env:DEPLOYMENT_CHAOS -ne 'true' -and $env:DEPLOYMENT_CHAOS -ne 'false') {
+            throw "DEPLOYMENT_CHAOS must be 'true' or 'false'"
+          }
+
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        enable-AzPSSession: true 
+    
+      # Linux VMSS nodes require an SSH key to connect to them. This currently cannot be auto-generated during deployment,
+      # so we handle it here. The public key part is used during deployment and stored in an sshkey resource.
+      # The private key is stored in keyvault after deployment. We check if the keyvault and key already exist before deployment.
+      # If they do, we assume we are updating an existing application and will not regnerate the key.
+    - name: Generate SSH Keys for VMSS
+      uses: azure/powershell@v2
+      with:
+        azPSVersion: "latest"
+        inlineScript: |
+          # Compose the name of the ssh key resource, although we should technically not make forward assumptions about the resource name. 
+          $sshkey = "$($env:DEPLOYMENT_NAME)-vmss-sshkey"
+          $existingKey = Get-AzSshKey -Name $sshkey
+          if($existingKey) {
+              Write-Output "Found existing key, using that instead of creating a new one"
+              Set-Content -Path ./key.pub -Value $existingKey.publicKey
+          } else {
+              Write-Output "Generating new key pair"
+              Invoke-Expression "ssh-keygen -N '' -q -t rsa -b 4096 -f ./key -C contosouser"
+          }
+
+      # Execute the Bicep deployment. This will create all the resources in Azure.
+      # The name of the deployment is set by the DEPLOYMENT_NAME variable and is used to name all resources.
+      # The output of the deployment (values in main.bicep) is stored in a file for retrieval in later jobs.
+    - name: Deploy Azure Resources
+      uses: azure/powershell@v2
+      id: azure-deploy
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |
+          # We need to pass some info on our deployment credential to the bicep template
+          $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
+          $sqlAdminData = @{
+            name = 'github' # This value isn't validated anywhere, just used to show to a human who this objectId belongs to
+            clientId = $cred.clientId
+            tenantId = $cred.tenantId
+          }
+
+          # Note that the name and location of the deployment are passed in the New-AzDeployment cmdlet and not in the parameters object.
+          # We also convert the string values from the variable to bool here
+          $parameters = @{
+            zoneRedundant = ($env:DEPLOYMENT_ZONES -eq 'true')
+            deployChaos = ($env:DEPLOYMENT_CHAOS -eq 'true')
+            sqlServerAdmin = $sqlAdminData
+          }
+          $res = New-AzDeployment -Name $env:DEPLOYMENT_NAME -TemplateFile "src/infra/bicep/main.bicep" -Location $env:DEPLOYMENT_REGION -TemplateParameterObject $parameters
+          
+          # Save the outputs from the deployment
+          # These contain the resource names we need for deploying
+          $outputsJson = $res.Outputs | ConvertTo-Json -Depth 10
+          $outputsJson | Out-File output.deployment.json
+
+          # Write the Front Door endpoint hostname to the step summary:
+          $endpointHostname = $res.Outputs.frontdoor_Endpoint.Value
+          "### Azure resource deployment complete :rocket:" | Out-File -Append -FilePath $Env:GITHUB_STEP_SUMMARY
+          "#### Your Contoso Traders website can be found at https://$endpointHostname and will start working once the application deployment is complete." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
+          "#### If you want to enable authentication for your website, ensure that https://$endpointHostname is added as a redirect URI to your Entra application." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
+
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+      # The private key of the SSH key pair should be stored in keyvault. 
+      # If it doesn't exist, we did not regenerate during this deployment and we can move on.
+    - name: Save SSH Private Key to Keyvault
+      uses: azure/powershell@v2
+      with:
+        azPSVersion: "latest"
+        inlineScript: |
+          # Check if the key file exists, otherwise we can stop now
+          $keyPath = "./key"
+          if(-not (Test-Path $keyPath)) {
+            Write-Output "Private key file not found, presumably it's already in Keyvault. Skipping."
+            exit
+          }
+
+          # Get the keyvault name from the environment
+          $keyvaultName = $env:KEYVAULT_NAME
+
+          # Give myself access to it:
+          $appId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          Set-AzKeyVaultAccessPolicy -VaultName $keyvaultName -ServicePrincipalName $appId -PermissionsToSecrets Set
+
+          # Get the key from the file and store it:
+          $key = Get-Content $keyPath -Raw | ConvertTo-SecureString -AsPlainText -Force
+          Set-AzKeyVaultSecret -VaultName $keyvaultName -Name "ssh-private-key" -SecretValue $key   
+
+      # Since we can't use key-based auth on the storage accounts, we'll have to login with the SP. 
+      # But we can only upload blobs to the storage account if we have blob contributor RBAC permission first
+      # We need this in later steps, but do it now to give the permission time to propagate.
+    - name: Assign Blob Data Contributor Role to SP
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest" 
+        inlineScript: |     
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          $resourceGroup = Get-AzResourceGroup -Name $env:RG_NAME
+          
+          # The New-AzRoleassignment cmdlet is not idempotent, so we need to check for the existing roleassignment first. 
+          $roleassn = Get-AzRoleAssignment -ServicePrincipal $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          if(-not $roleassn) {
+            Write-Output "SP does not have blob data contributor role, assigning."
+            New-AzRoleAssignment -ApplicationId $userObjectId -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $resourceGroup.ResourceId
+          }
+
+      # The deployment output is saved in a file. It must be uploaded as an artifact so it can be used in later jobs.
+    - name: Save deployment output
+      uses: actions/upload-artifact@v4
+      with:
+        name: deploymentOutput
+        path: output.deployment.json
+
+  build-products-api:
+    name: 'Build Products API'
+    needs: [deploy-infra]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        enable-AzPSSession: true 
+
+      # We saved a file with the output from the Azure deployment in the previous job.
+    - uses: actions/download-artifact@v4
+      with:
+        name: deploymentOutput
+
+      # What we do here is read the files with the output from the previous steps. 
+      # Each of the values in there, we store as github env variables for future use.
+      # They can be retrieved using $env:VARIABLE, e.g. $env:ACR_NAME. 
+      # We repeat this step in most of the following jobs to access deployment output.
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+      
+      # We build the Docker container for the products API.
+      # The tag is composed of the ACR name, the repo name, and the commit SHA. 
+      # The subsequent push step will look for this tag to identify containers to push
+    - name: Build Docker Container
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |
+          # Set -e ensures the script stops execution when an error occurs
+          Set-StrictMode -Version Latest
+          
+          $repoName = $env:ACR_REPO_PRODUCTS_NAME
+          $version = "${{ github.sha }}"
+          $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+          
+          Write-Output "Building image with tag $tag"
+          $cmd = "docker build -f ./src/app/ContosoTraders.Api.Products/Dockerfile -t $tag src/app"
+          $buildResult = Invoke-Expression $cmd
+          # Check the exit code of the Docker build, if it fails, stop the script and return an error
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Docker build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+      # The container registry was deployed with the infrastructure. AKS and ACA will pull from here. 
+    - name: Push Container to ACR
+      uses: azure/powershell@v2
+      with:         
+        azPSVersion: "latest"
+        inlineScript: |
+          $repoName = $env:ACR_REPO_PRODUCTS_NAME
+          Connect-AzContainerRegistry -Name $env:ACR_NAME
+          $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
+          Invoke-Expression $cmd
+
+  build-carts-api:
+    name: 'Build Carts API'
+    needs: [deploy-infra]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+  
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true 
+  
+      - uses: actions/download-artifact@v4
+        with:
+          name: deploymentOutput
+      
+      - name: Parse Deployment Output
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: | 
+            $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+            $deploymentOutput.psobject.properties | ForEach-Object {
+              ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+
+      - name: Build Docker Container
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |
+            # Set -e ensures the script stops execution when an error occurs
+            Set-StrictMode -Version Latest
+            
+            $repoName = $env:ACR_REPO_CARTS_NAME
+            $version = "${{ github.sha }}"
+            $tag = ("{0}.azurecr.io/{1}:{2}" -f $env:ACR_NAME, $repoName, $version)
+            
+            Write-Output "Building image with tag $tag"
+            $cmd = "docker build -f ./src/app/ContosoTraders.Api.Carts/Dockerfile -t $tag src/app"
+            $buildResult = Invoke-Expression $cmd
+            
+            # Check the exit code of the Docker build, if it fails, stop the script and return an error
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Docker build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+            }
+      
+      - name: Push Container to ACR
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |
+            $repoName = "${{ env.ACR_REPO_CARTS_NAME }}"
+            Connect-AzContainerRegistry -Name $env:ACR_NAME
+            $cmd = "docker push --all-tags $($env:ACR_NAME).azurecr.io/$repoName"
+            Invoke-Expression $cmd
+   
+  deploy-products-api:
+    name: 'Deploy Products API to AKS'
+    needs: [deploy-infra, build-products-api]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true 
+
+      - name: Download Deployment Output
+        uses: actions/download-artifact@v4
+        with:
+          name: deploymentOutput
+  
+      - name: Parse Deployment Output
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: | 
+            $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+            $deploymentOutput.psobject.properties | ForEach-Object {
+              ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+
+      - name: Install Helm
+        uses: Azure/setup-helm@v4
+
+      - name: Setup Kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Set AKS Context
+        uses: Azure/aks-set-context@v4
+        with:
+          cluster-name: ${{ env.AKSCLUSTER_NAME }}
+          resource-group: ${{ env.RG_NAME }}
+
+        # Update the values in the manifest file with values from the environment.
+        # Note that we pass only few variables directly in the step, many are already available in the env
+      - name: Update Deployment Manifest
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/Deployment.yaml
+        env:   
+          AKS_REPLICAS: 1
+          PRODUCTS_IMAGE_TAG: ${{ github.sha }}
+
+      - name: Lint Deployment Manifest
+        uses: azure/k8s-lint@v1
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Deployment.yaml
+
+      - name: Create Kubernetes Secret (kv endpoint)
+        uses: Azure/k8s-create-secret@v3.0
+        with:
+          secret-type: "generic"
+          secret-name: "contoso-traders-kv-endpoint"
+          string-data: '{ "contoso-traders-kv-endpoint" : "https://${{ env.KEYVAULT_NAME }}.vault.azure.net/" }'
+
+        # We're leaving this empty because we want to use the SystemAssigned identity. 
+        # TODO look into leaving this out completely and see if it works.
+      - name: Create Kubernetes Secret (client id)
+        uses: Azure/k8s-create-secret@v3.0
+        with:
+          secret-type: "generic"
+          secret-name: "contoso-traders-mi-clientid"
+          string-data: '{ "contoso-traders-mi-clientid" : "" }'
+
+      - name: Prepare Workload ID
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Get the OIDC Issuer URL
+            $AKS_OIDC_ISSUER=(az aks show -n ${{env.AKSCLUSTER_NAME}} -g ${{env.RG_NAME}} --query "oidcIssuerProfile.issuerUrl" -otsv)
+
+            $MANAGED_IDENTITY_NAME="${{env.DEPLOYMENT_NAME}}-wi"
+            # Create the managed identity
+            az identity create --name $MANAGED_IDENTITY_NAME --resource-group ${{env.RG_NAME}} --location ${{env.DEPLOYMENT_REGION}}
+
+            # Get identity client ID
+            $USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'clientId' -o tsv)
+            $USER_ASSIGNED_OBJ_ID=$(az identity show --resource-group ${{env.RG_NAME}} --name $MANAGED_IDENTITY_NAME --query 'principalId' -o tsv)
+            
+            Write-Output "Workload Identity clientId: $USER_ASSIGNED_CLIENT_ID objectId: $USER_ASSIGNED_OBJ_ID "
+            ("{0}={1}" -f "USER_ASSIGNED_CLIENT_ID", $USER_ASSIGNED_CLIENT_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "USER_ASSIGNED_OBJ_ID", $USER_ASSIGNED_OBJ_ID) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "AKS_OIDC_ISSUER", $AKS_OIDC_ISSUER) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            ("{0}={1}" -f "MANAGED_IDENTITY_NAME", $MANAGED_IDENTITY_NAME) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create Service account to federate with managed identity
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+        env:
+          USER_ASSIGNED_CLIENT_ID: ${{ env.USER_ASSIGNED_CLIENT_ID }}
+
+      - name: Create Service Account for Federate with Managed Identity
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/ServiceAccount.yaml
+          force: true
+
+      - name: Federate the Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az identity federated-credential create --name wi-federated-id --identity-name ${{env.MANAGED_IDENTITY_NAME}} --resource-group ${{env.RG_NAME}} --issuer ${{env.AKS_OIDC_ISSUER}} --subject system:serviceaccount:default:workload-sa
+      
+      - name: Assign roles to Workload Identity
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az role assignment create --assignee-object-id ${{env.USER_ASSIGNED_OBJ_ID}} --role "Key Vault Secrets User" --scope ${{env.KEYVAULT_ID}} --assignee-principal-type ServicePrincipal
+
+      - name: Assign permission access policy to KeyVault
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |       
+            az keyvault set-policy --name ${{env.KEYVAULT_NAME}} --object-id ${{env.USER_ASSIGNED_OBJ_ID}} --secret-permissions get list --key-permissions get list --certificate-permissions get list
+      
+      - name: Apply Deployment Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Deployment.yaml
+          images: ${{ env.ACR_NAME }}.azurecr.io/${{ env.ACR_REPO_PRODUCTS_NAME }}:${{ github.sha }}
+          force: true
+
+      - name: Apply Service Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Service.yaml
+          force: true
+        
+        # Creation of the ingress controller will create an IP address resource in Azure.
+        # This is the IP address used for the ingress traffic to the service. 
+      - name: Create Ingress Controller
+        run: |
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx \
+            --set controller.replicaCount=1 \
+            --set controller.nodeSelector."beta\.kubernetes\.io/os"=linux \
+            --set defaultBackend.nodeSelector."beta\.kubernetes\.io/os"=linux \
+            --set controller.admissionWebhooks.patch.nodeSelector."beta\.kubernetes\.io/os"=linux \
+            --set controller.service.externalTrafficPolicy=Local
+
+        # By default, Azure IP addresses don't have a DNS name. We need it for our TLS cert to be issued.
+        # We set it by updating the label of the IP address resource in Azure, but the domain part is not user-settable. 
+        # The end result will be something like something.region.cloudapp.azure.com, which we then output as a Github variable.
+      - name: Set Ingress FQDN on IP Address
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Find out what IP address is associated with the ingress controller:
+            $ingress_ip = (kubectl get services -o jsonpath='{.status.loadBalancer.ingress[0].ip}' -n default nginx-ingress-ingress-nginx-controller)
+
+            # Find out which Azure Public IP Address resource has that IP address
+            $ip_resource = Get-AzPublicIpAddress | Where { $_.IpAddress -eq $ingress_ip } | Select -ExpandProperty Id
+
+            # Update that IP address resource with a new FQDN label:
+            $ip = (az network public-ip update --ids $ip_resource --dns-name ${{ env.DEPLOYMENT_NAME }}) | ConvertFrom-Json
+
+            # Spit the full FQDN out to the GitHub environment
+            $fqdn = $ip.dnsSettings.fqdn
+            Write-Output "Settings FQDN $fqdn on IP address $ingress_ip"
+            ("{0}={1}" -f "PRODUCTS_FQDN", $fqdn) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Apply CertManager Namespace Manifest
+        uses: Azure/k8s-deploy@v4
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/NamespaceCertManager.yaml
+          force: true
+
+        # Install cert-manager in the cluster. This will create a webhook pod in the cert-manager namespace.
+        # We wait for that pod to be running before we continue, otherwise the certificate creation will later fail.
+      - name: Install Cert-Manager
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |    
+            "kubectl apply --validate=false -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.1/cert-manager.yaml" | Invoke-Expression
+            $webhookpod = (kubectl get pods -n cert-manager -l app=webhook -o jsonpath='{.items[0].metadata.name}')
+            ("kubectl wait -n cert-manager --for=jsonpath='{.status.phase}'=Running pod/$webhookpod") | Invoke-Expression
+
+        # If we proceed immediately, we'll catch CertManager in an unready state. 
+        # Ideally we would solve this with kubectl wait, but apparently that's not enough in this case. 
+      - name: Wait 30 seconds
+        run: sleep 30s
+        shell: bash
+
+      - name: Apply ClusterIssuer Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/ClusterIssuer.yaml
+          force: true
+      
+      - name: Update Certificate Manifest
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/Certificate.yaml
+        env:
+          AKS_FQDN: ${{ env.PRODUCTS_FQDN }}
+
+      - name: Apply Certificate Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Certificate.yaml
+          force: true
+
+      - name: Update Ingress Manifest
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: "{"
+          tokenSuffix: "}"
+          files: ./src/app/ContosoTraders.Api.Products/Manifests/Ingress.yaml
+        env:
+          AKS_FQDN: ${{ env.PRODUCTS_FQDN }}
+
+      - name: Apply Ingress Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Ingress.yaml
+          force: true
+
+      - name: Apply ClusterRole Manifest
+        uses: Azure/k8s-deploy@v5
+        with:
+          manifests: ./src/app/ContosoTraders.Api.Products/Manifests/ClusterRole.yaml
+          force: true
+
+      - name: Update Front Door with Products API endpoint
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az afd origin update --resource-group ${{ env.RG_NAME }}  --profile-name ${{ env.FRONTDOOR_NAME }} --origin-group-name origingroup-productsapi --name origin-productsapi --host-name ${{ env.PRODUCTS_FQDN }} --origin-host-header ${{ env.PRODUCTS_FQDN }}
+
+      - name: Install Chaos Mesh on the AKS cluster
+        run: |
+          helm repo add chaos-mesh https://charts.chaos-mesh.org
+          helm repo update
+          kubectl get ns chaos-testing || kubectl create ns chaos-testing
+          if ! helm status chaos-mesh -n chaos-testing; then
+            helm install chaos-mesh chaos-mesh/chaos-mesh \
+              --namespace=chaos-testing \
+              --set chaosDaemon.runtime=containerd \
+              --set chaosDaemon.socketPath=/run/containerd/containerd.sock
+          else
+            echo "Chaos Mesh is already installed"
+          fi 
+
+  deploy-carts-api:
+    name: 'Deploy Carts API to ACA'
+    needs: [deploy-infra, build-carts-api]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true 
+
+      - name: Download Deployment Output
+        uses: actions/download-artifact@v4
+        with:
+          name: deploymentOutput
+  
+      - name: Parse Deployment Output
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: | 
+            $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+            $deploymentOutput.psobject.properties | ForEach-Object {
+              ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+
+      - name: Deploy Carts API to ACA
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp update -n ${{ env.ACA_APPNAME }} -g ${{ env.RG_NAME }} --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.ACR_REPO_CARTS_NAME }}:${{ github.sha }}
+          
+  build-website:
+      name: 'Build Website'
+      needs: [deploy-products-api, deploy-carts-api]
+      runs-on: ubuntu-latest
+      steps:
+        - name: 'Checkout GitHub Action'
+          uses: actions/checkout@main
+
+        - name: 'Login via Azure CLI'
+          uses: azure/login@v2
+          with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}
+            enable-AzPSSession: true 
+
+        - name: Download Deployment Output
+          uses: actions/download-artifact@v4
+          with:
+            name: deploymentOutput
+
+        - name: Parse Deployment Output
+          uses: azure/powershell@v2
+          with: 
+            azPSVersion: "latest"
+            inlineScript: | 
+              $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+              $deploymentOutput.psobject.properties | ForEach-Object {
+                ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              }
+
+        - name: Update UI Configuration
+          uses: cschleiden/replace-tokens@v1.2
+          with: 
+            tokenPrefix: "{{"
+            tokenSuffix: "}}"
+            files: ./src/app/ContosoTraders.Ui.Website/.env.production 
+
+        - name: Setup Node
+          uses: actions/setup-node@v3
+          with:
+            node-version: 20.15.0
+            cache: npm
+            cache-dependency-path: src/app/ContosoTraders.Ui.Website/package-lock.json
+
+        - name: Run NPM CI
+          run: npm ci
+          working-directory: src/app/ContosoTraders.Ui.Website
+
+        - name: NPM Run Build
+          run: npm run build
+          working-directory: src/app/ContosoTraders.Ui.Website
+
+        - name: Save build output
+          uses: actions/upload-artifact@v4
+          with:
+            name: websiteBuild
+            path: src/app/ContosoTraders.Ui.Website/build
+    
+  deploy-website:
+    name: 'Deploy Website to Storage'
+    needs: [deploy-infra, build-website]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+
+      - name: 'Login via Azure CLI'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true 
+
+      - name: Download Deployment Output
+        uses: actions/download-artifact@v4
+        with:
+          name: deploymentOutput
+
+      - name: Download Website
+        uses: actions/download-artifact@v4
+        with:
+          name: websiteBuild
+          path: website
+
+      - name: Parse Deployment Output
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: | 
+            $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+            $deploymentOutput.psobject.properties | ForEach-Object {
+              ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+
+      - name: Enable Static Website
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: | 
+            $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
+            Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+
+      - name: Upload UI to storage account
+        run: |
+          az storage blob sync \
+            --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' \
+            --container '$web' \
+            --source 'website' \
+            --auth-mode login
+
+  deploy-static-images:
+    name: 'Deploy Static images to Storage'
+    needs: [deploy-infra]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        enable-AzPSSession: true 
+
+    - name: Download Deployment Output
+      uses: actions/download-artifact@v4
+      with:
+        name: deploymentOutput
+
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+    - name: Enable Static Website
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest" 
+        inlineScript: | 
+          $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
+          Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
+            
+    - name: Upload UI to storage account
+      run: |
+        az storage blob sync \
+          --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' \
+          --container '$web' \
+          --source 'src/app/ContosoTraders.Api.Images' \
+          --auth-mode login
+
+
+  insert-sampledata:
+    name: 'Insert Sample Data in Database'
+    needs: [deploy-infra, deploy-products-api]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        enable-AzPSSession: true 
+
+    - name: Download Deployment Output
+      uses: actions/download-artifact@v4
+      with:
+        name: deploymentOutput
+
+    - name: Parse Deployment Output
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $deploymentOutput = Get-Content "output.deployment.json" | ConvertFrom-Json -Depth 10  
+          $deploymentOutput.psobject.properties | ForEach-Object {
+            ("{0}={1}" -f ($_.Name).ToUpper(), $_.Value.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
+    - name: Get SQL Database Access
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          az sql server ad-admin create --display-name 'github' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
+
+          $connectionStringProducts = ("Server=tcp:{0}.database.windows.net,1433;Initial Catalog={1};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication='Active Directory Default';" -f $env:SQL_SERVERNAME, $env:SQL_PRODUCTSDATABASENAME)
+          ("{0}={1}" -f "SQL_CONNECTION_STRING_PRODUCTS", $connectionStringProducts) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Seed Products DB
+      uses: azure/sql-action@v2
+      with:
+        connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
+        path: ./src/app/ContosoTraders.Api.Products/Migration/productsdb.sql
+
+    - name: Prepare Workload User SQL
+      uses: azure/powershell@v2
+      with: 
+        azPSVersion: "latest"
+        inlineScript: |       
+          # Get the Managed Identity (Entra Workload) principal ID
+          $managedIdentityName="${{env.DEPLOYMENT_NAME}}-wi"
+          $identityPrincipalId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query principalId --output tsv)
+          $identityClientId=(az identity show --name $managedIdentityName --resource-group ${{env.RG_NAME}} --query clientId --output tsv)
+
+                    
+          # Generate SID. By doing this, the server will not have to look up the SID in the directory,
+          # for which the current security context does not have permission. 
+          $sid = "0x" + [System.BitConverter]::ToString(([guid]$identityClientId).ToByteArray()).Replace("-", "")
+          
+          # Create SQL script for creating user and assigning the role
+          $sqlScript = @"
+                  CREATE USER  [$managedIdentityName] WITH SID = $sid, TYPE = E;
+                  ALTER ROLE db_datareader ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_datawriter ADD MEMBER [$managedIdentityName];
+                  ALTER ROLE db_ddladmin  ADD MEMBER [$managedIdentityName];
+                  GO
+          "@
+          Set-Content -Path ./user_creation.sql -Value $sqlScript
+          Get-Content -Path ./user_creation.sql
+
+    - name: Add Workload User ID to DB
+      uses: azure/sql-action@v2
+      with:
+        connection-string: ${{ env.SQL_CONNECTION_STRING_PRODUCTS }}
+        path: ./user_creation.sql
+
+        

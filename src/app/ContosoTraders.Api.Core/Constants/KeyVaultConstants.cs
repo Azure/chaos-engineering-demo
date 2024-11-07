@@ -24,5 +24,15 @@ internal class KeyVaultConstants
 
     public static readonly string SecretNameCognitiveServicesAccountKey = "cognitiveServicesAccountKey";
 
+    public static readonly string SecretNameCartsDbName = "cartsDbName";
+
+    public static readonly string SecretNameStocksDbName = "stocksDbName";
+
+    public static readonly string SecretNameCartsDbContainerName = "cartsDbContainerName";
+
+    public static readonly string SecretNameStocksDbContainerName = "stocksDbContainerName";
+
+
+
     #endregion
 }
