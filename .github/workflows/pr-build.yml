@@ -21,8 +21,8 @@ jobs:
             $deploymentName = "ctpr${{ github.event.number }}
           }
           else {
-          $sha = $env:GITHUB_SHA.Substring(0, 4)
-            $deploymentName = "ct$sha"
+            $sha = $env:GITHUB_SHA.Substring(0, 4)
+            $deploymentName = ("ct{0}" -f $sha)
           }
           ("DEPLOYMENTNAME={0}" -f $deploymentName) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           
