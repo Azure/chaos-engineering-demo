@@ -14,6 +14,7 @@ jobs:
     steps:
     - name: Compose deployment name
       uses: azure/powershell@v2
+      id: make-name
       with: 
         azPSVersion: "latest"
         inlineScript: | 
@@ -24,6 +25,7 @@ jobs:
             $sha = $env:GITHUB_SHA.Substring(0, 4)
             $deploymentName = "ct$sha"
           }
+        
           ("DEPLOYMENTNAME={0}" -f $deploymentName) | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           
   run-build-deploy:
@@ -31,7 +33,7 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     needs: [prepare-test]
     with:
-      DEPLOYMENT_NAME: ${{ needs.prepare-run.outputs.DEPLOYMENTNAME }}
+      DEPLOYMENT_NAME: ${{ needs.prepare-run.make-name.outputs.DEPLOYMENTNAME }}
     secrets: inherit
     
   delete-resources:
