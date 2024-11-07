@@ -43,8 +43,10 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
     version: '12.0'
     administrators: {
       administratorType: 'ActiveDirectory'
+      azureADOnlyAuthentication: true
       login: sqlServerAdmin.name
-      sid: sqlServerAdmin.clientId
+      principalType: 'Application'
+      sid: sqlServerAdmin.clientId 
       tenantId: sqlServerAdmin.tenantId
     }
 

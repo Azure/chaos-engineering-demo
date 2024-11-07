@@ -108,7 +108,7 @@ jobs:
           # We need to pass some info on our deployment credential to the bicep template
           $cred = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json
           $sqlAdminData = @{
-            name = 'service principal'
+            name = 'github'
             clientId = $cred.clientId
             tenantId = $cred.tenantId
           }

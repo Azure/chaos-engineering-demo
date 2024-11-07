@@ -60,7 +60,7 @@ module storage './resources/storage.bicep' = {
   scope: rg
   params: {
     nameprefix: toLower(name)
-    location: rg.location
+    location: rg.location 
     zoneRedundant: zoneRedundant
     logAnalyticsId: monitoring.outputs.logAnalyticsWorkspaceId
   }
