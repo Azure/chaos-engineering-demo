@@ -193,7 +193,6 @@ jobs:
         name: deploymentOutput
         path: output.deployment.json
 
-
   build-products-api:
     name: 'Build Products API'
     needs: [deploy-infra]
@@ -730,7 +729,10 @@ jobs:
           inlineScript: | 
             # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
-            Get-ChildItem -File -Recurse -Path 'website' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
+            Get-ChildItem -File -Recurse -Path 'website' | % {
+              $contentType = $contentType = [System.Web.MimeMapping]::GetMimeMapping($_.FullName)
+              Set-AzStorageBlobContent -File $_.FullName -Container '$web' -Context $context -Properties @{"ContentType" = $contentType} -Force
+              }
 
   deploy-static-images:
     name: 'Deploy Static images to Storage'
@@ -776,7 +778,10 @@ jobs:
         inlineScript: | 
           # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
-          Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | Set-AzStorageBlobContent -Container '$web' -Context $context -Force
+          Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | % {
+              $contentType = $contentType = [System.Web.MimeMapping]::GetMimeMapping($_.FullName)
+              Set-AzStorageBlobContent -File $_.FullName -Container '$web' -Context $context -Properties @{"ContentType" = $contentType} -Force
+              }
 
   insert-sampledata:
     name: 'Insert Sample Data in Database'
