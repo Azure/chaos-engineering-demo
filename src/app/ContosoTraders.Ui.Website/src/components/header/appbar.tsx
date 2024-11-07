@@ -9,7 +9,7 @@ import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Toolbar from '@mui/material/Toolbar';
-import { BagIcon, Logo, LogoutIcon, PersonalInformationIcon, ProfileIcon, SearchIconNew } from "app/assets/images";
+import { BagIcon, Logo, LogoutIcon, PersonalInformationIcon, SearchIconNew } from "app/assets/images";
 import useAuthentication from 'app/hooks/useAuthentication';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -79,10 +79,10 @@ function TopAppBar(props) {
                 aria-label="account of current user"
                 aria-controls={menuId}
                 aria-haspopup="true"
-                onClick={()=> navigate("/profile")}
+                onClick={()=> logout()}
                 color="inherit"
               >
-                <ProfileIcon/>
+                 <LogoutIcon/>
               </IconButton>
             </div>
           </AuthenticatedTemplate>

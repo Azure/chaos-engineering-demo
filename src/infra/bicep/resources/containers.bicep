@@ -49,7 +49,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location
   sku: {
-    name: 'Basic'
+    name: zoneRedundant? 'Premium' : 'Basic'
   }
   properties: {
     adminUserEnabled: true
@@ -84,16 +84,24 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-03-02-preview' = {
     networkProfile: {
       networkPlugin: 'azure'
     }
+    oidcIssuerProfile: {
+      enabled: true
+    }
+    securityProfile: {
+      workloadIdentity: {
+        enabled: true
+      }
+    }
 
     agentPoolProfiles: [
       {
         name: 'agentpool'
-        osDiskSizeGB: 0 // Specifying 0 will apply the default disk size for that agentVMSize.
+        osDiskSizeGB: 0 // Specifying 0 will apply the default disk size for that agentVMSize. 
         count: 1
         enableAutoScaling: aksAutoScaling
         minCount: 1 // minimum node count
         maxCount: 3 // maximum node count
-        vmSize: 'standard_b2s'
+        vmSize: 'standard_b2pls_v2'
         osType: 'Linux'
         mode: 'System'
         availabilityZones: zoneRedundant ? ['1', '2', '3'] : []
@@ -280,6 +288,7 @@ resource secretCartsApiEndpoint 'Microsoft.KeyVault/vaults/secrets@2023-07-01' =
 output aksClusterName string = aks.name
 output aksClusterFqdn string = aks.properties.fqdn
 output aksClusterKubeletIdentity string = aks.properties.identityProfile.kubeletidentity.objectId
+output aksClusterResourceGroup string = aksClusterResourceGroup
 output acrName string = acr.name
 output acaAppFqdn string = cartsApiContainerApp.properties.configuration.ingress.fqdn
 output acaAppName string = cartsApiContainerApp.name
