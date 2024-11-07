@@ -1,0 +1,31 @@
+name: Test Build Web UI
+
+on:
+  # Only for testing
+  workflow_dispatch:
+
+jobs:       
+  test-build-website:
+      name: 'Test Build Website'
+      runs-on: ubuntu-latest
+      steps:
+        - name: 'Checkout GitHub Action'
+          uses: actions/checkout@main
+        - name: Setup Node
+          uses: actions/setup-node@v3
+          with:
+            node-version: 20.15.0
+            cache: npm
+            cache-dependency-path: src/app/ContosoTraders.Ui.Website/package-lock.json
+        - name: Run NPM CI
+          run: npm ci
+          working-directory: src/app/ContosoTraders.Ui.Website
+        - name: NPM Run Build
+          run: npm run build
+          working-directory: src/app/ContosoTraders.Ui.Website
+        - name: Save build output
+          uses: actions/upload-artifact@v4
+          with:
+            name: websiteBuild
+            path: src/app/ContosoTraders.Ui.Website/build
+    
