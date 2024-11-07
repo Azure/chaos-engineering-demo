@@ -722,18 +722,6 @@ jobs:
             $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
             Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
 
-      # - name: Upload UI to storage account
-      #   uses: azure/powershell@v2
-      #   with: 
-      #     azPSVersion: "latest" 
-      #     inlineScript: | 
-      #       # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
-      #       $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_UI -UseConnectedAccount
-      #       Get-ChildItem -File -Recurse -Path 'website' | % {
-      #         $contentType = $contentType = [System.Web.MimeMapping]::GetMimeMapping($_.FullName)
-      #         Set-AzStorageBlobContent -File $_.FullName -Container '$web' -Context $context -Properties @{"ContentType" = $contentType} -Force
-      #         }
-
       - name: Upload UI to storage account
         run: |
           az storage blob sync \
@@ -779,18 +767,6 @@ jobs:
           $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
           Enable-AzStorageStaticWebsite -Context $context -IndexDocument 'index.html' -ErrorDocument404Path 'index.html'
             
-    # - name: Upload Images
-    #   uses: azure/powershell@v2
-    #   with: 
-    #     azPSVersion: "latest" 
-    #     inlineScript: | 
-    #       # We need blob contributor permissons for this action. That is assigned in the beginning of the workflow.
-    #       $context = New-AzStorageContext -StorageAccountName $env:STORAGE_ACCOUNTNAME_IMAGES -UseConnectedAccount
-    #       Get-ChildItem -File -Recurse -Path 'src/app/ContosoTraders.Api.Images' | % {
-    #           $contentType = $contentType = [System.Web.MimeMapping]::GetMimeMapping($_.FullName)
-    #           Set-AzStorageBlobContent -File $_.FullName -Container '$web' -Context $context -Properties @{"ContentType" = $contentType} -Force
-    #           }
-
     - name: Upload UI to storage account
       run: |
         az storage blob sync \
