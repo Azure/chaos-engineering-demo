@@ -812,8 +812,8 @@ jobs:
       with: 
         azPSVersion: "latest"
         inlineScript: | 
-          # $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
-          # az sql server ad-admin create --display-name 'github-sp' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
+          $userObjectId = '${{ secrets.AZURE_CREDENTIALS }}' | ConvertFrom-Json | Select-Object -ExpandProperty clientId
+          az sql server ad-admin create --display-name 'github' --object-id $userObjectId --resource-group $env:RG_NAME --server $env:SQL_SERVERNAME
 
           $connectionStringProducts = ("Server=tcp:{0}.database.windows.net,1433;Initial Catalog={1};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication='Active Directory Default';" -f $env:SQL_SERVERNAME, $env:SQL_PRODUCTSDATABASENAME)
           ("{0}={1}" -f "SQL_CONNECTION_STRING_PRODUCTS", $connectionStringProducts) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
