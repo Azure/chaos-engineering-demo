@@ -7,7 +7,7 @@ name: Build and Deploy Application
 env:
   # This is the global resource prefix for this deployment
   # Use lower case letters and numbers only and no more than 6 chars
-  DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+  DEPLOYMENT_NAME: ${{ inputs.DEPLOYMENT_NAME != null && inputs.DEPLOYMENT_NAME || vars.DEPLOYMENT_NAME }}
 
   # Azure region to which the resources will be deployed
   DEPLOYMENT_REGION: ${{ vars.DEPLOYMENT_REGION }}
