@@ -737,7 +737,7 @@ jobs:
       - name: Upload UI to storage account
         run: |
           az storage blob sync \
-            --account-name $env:STORAGE_ACCOUNTNAME_UI \
+            --account-name '${{ env.STORAGE_ACCOUNTNAME_UI }}' \
             --container '$web' \
             --source 'website' \
             --auth-mode login
@@ -794,7 +794,7 @@ jobs:
     - name: Upload UI to storage account
       run: |
         az storage blob sync \
-          --account-name $env:STORAGE_ACCOUNTNAME_IMAGES \
+          --account-name '${{ env.STORAGE_ACCOUNTNAME_IMAGES }}' \
           --container '$web' \
           --source 'src/app/ContosoTraders.Api.Images' \
           --auth-mode login
