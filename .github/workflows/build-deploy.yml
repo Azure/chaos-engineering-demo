@@ -37,6 +37,9 @@ on:
     paths-ignore:
       - '*.md'
       - '*.png'
+  pull_request:
+    types: [ opened, edited, reopened, review_requested ]
+    branches: [ main ]
 
   # We also want to be able to run this manually from Github
   workflow_dispatch:
