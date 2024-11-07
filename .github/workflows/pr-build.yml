@@ -8,11 +8,34 @@ on:
     workflow_dispatch:
 
 jobs:
+  prepare-test:
+    name: 'Prepare Test Run'
+    runs-on: ubuntu-latest
+    outputs:
+      DEPLOYMENTNAME: ${{ steps.make-name.outputs.DEPLOYMENTNAME }}
+    steps:
+    - name: Compose deployment name
+      uses: azure/powershell@v2
+      id: make-name
+      with: 
+        azPSVersion: "latest"
+        inlineScript: | 
+          if($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $deploymentName = "ctpr${{ github.event.number }}"
+          }
+          else {
+            $sha = $env:GITHUB_SHA.Substring(0, 4)
+            $deploymentName = "ct$sha"
+          }
+        
+          echo "DEPLOYMENTNAME=$deploymentName" >> $env:GITHUB_OUTPUT
+          
   run-build-deploy:
     name: 'Run Build and Deploy pipeline'
     uses: ./.github/workflows/build-deploy.yml
+    needs: [prepare-test]
     with:
-      DEPLOYMENT_NAME: 'ctcpr${{ github.event.number }}'
+      DEPLOYMENT_NAME: '${{ needs.prepare-test.outputs.DEPLOYMENTNAME }}'
     secrets: inherit
     
   delete-resources:
