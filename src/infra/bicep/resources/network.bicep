@@ -84,32 +84,6 @@ resource nsgAks 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           sourcePortRange: '*'
         }
       }
-      // {
-      //   name: 'Allow-Inbound-Internet-80'
-      //   properties: {
-      //     access: 'Allow'
-      //     direction: 'Inbound'
-      //     protocol: 'Tcp'
-      //     destinationAddressPrefix: aksSubnetPrefix
-      //     destinationPortRange: '80'
-      //     priority: 1001       
-      //     sourceAddressPrefix: 'Internet'
-      //     sourcePortRange: '*'
-      //   }
-      // }
-      // {
-      //   name: 'Allow-Inbound-Internet-443'
-      //   properties: {
-      //     access: 'Allow'
-      //     direction: 'Inbound'
-      //     protocol: 'Tcp'
-      //     destinationAddressPrefix: aksSubnetPrefix
-      //     destinationPortRange: '443'
-      //     priority: 1002          
-      //     sourceAddressPrefix: 'Internet'
-      //     sourcePortRange: '*'
-      //   }
-      // }
     ]
   }
 }
@@ -132,32 +106,7 @@ resource nsgAca 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
           sourcePortRange: '*'
         }
       }
-      {
-        name: 'Allow-Inbound-Internet-80'
-        properties: {
-          access: 'Allow'
-          direction: 'Inbound'
-          protocol: 'Tcp'
-          destinationAddressPrefix: acaSubnetPrefix
-          destinationPortRange: '80'
-          priority: 1001         
-          sourceAddressPrefix: 'Internet'
-          sourcePortRange: '*'
-        }
-      }
-      {
-        name: 'Allow-Inbound-Internet-443'
-        properties: {
-          access: 'Allow'
-          direction: 'Inbound'
-          protocol: 'Tcp'
-          destinationAddressPrefix: acaSubnetPrefix
-          destinationPortRange: '443'
-          priority: 1002
-          sourceAddressPrefix: 'Internet'
-          sourcePortRange: '*'
-        }
-      }
+      
     ]
   }
 }
