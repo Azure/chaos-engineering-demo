@@ -527,13 +527,7 @@ jobs:
           inlineScript: |    
             "kubectl apply --validate=false -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.1/cert-manager.yaml" | Invoke-Expression
             $webhookpod = (kubectl get pods -n cert-manager -l app=webhook -o jsonpath='{.items[0].metadata.name}')
-            ("kubectl wait -n cert-manager --for=jsonpath='{.status.phase}'=Running pod/$webhookpod") | Invoke-Expression
-
-        # If we proceed immediately, we'll catch CertManager in an unready state. 
-        # Ideally we would solve this with kubectl wait, but apparently that's not enough in this case. 
-      - name: Wait 30 seconds
-        run: sleep 30s
-        shell: bash
+            ("kubectl wait -n cert-manager --for=jsonpath='{.status.phase}'=Running pod/$webhookpod" --timeout=300s) | Invoke-Expression
 
       - name: Apply ClusterIssuer Manifest
         uses: Azure/k8s-deploy@v5
@@ -574,7 +568,7 @@ jobs:
           azPSVersion: "latest"
           inlineScript: |        
             # Wait for the certificate to be created
-            kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' certificate/tls-secret
+            kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' certificate/tls-secret --timeout=300s
             # We can delete the NSG rule to allow letsencrypt to validate the domain as no longer needed
             az network nsg rule delete --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80
 
