@@ -110,33 +110,6 @@ resource afdroute_productsapi 'Microsoft.Cdn/profiles/afdendpoints/routes@2021-0
   ]
 }
 
-// LetEncrypt HTTP01 Challenege
-resource afdroute_letsencrypt 'Microsoft.Cdn/profiles/afdendpoints/routes@2021-06-01' = {
-  parent: afdendpoint
-  name: 'route-letsencrypt'
-  properties: {
-    customDomains: []
-    originGroup: {
-      id: afdorigingroup_productsapi.id
-    }
-    ruleSets: []
-    supportedProtocols: [
-      'Http'
-      'Https'
-    ]
-    patternsToMatch: [
-      '/.well-known/acme-challenge/*'
-    ]
-    forwardingProtocol: 'MatchRequest'
-    linkToDefaultDomain: 'Enabled'
-    httpsRedirect: 'Enabled'
-    enabledState: 'Enabled'
-  }
-  dependsOn: [
-    afdorigin_productsapi
-  ]
-}
-
 // Carts API
 
 resource afdorigingroup_cartsapi 'Microsoft.Cdn/profiles/origingroups@2021-06-01' = {

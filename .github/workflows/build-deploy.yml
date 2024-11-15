@@ -550,11 +550,33 @@ jobs:
         env:
           AKS_FQDN: ${{ env.PRODUCTS_FQDN }}
 
+      - name: Create NSG rule to allow certificate validation
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Find out what IP address is associated with the ingress controller:
+            $ingress_ip = (kubectl get services -o jsonpath='{.status.loadBalancer.ingress[0].ip}' -n default nginx-ingress-ingress-nginx-controller)
+
+            # We need to add the IP to the NSG rule to allow letsencrypt to validate the domain
+            az network nsg rule create --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80 --source-address-prefixes Internet --destination-address-prefixes $ingress_ip --priority 1010 --protocol Tcp
+            
+
       - name: Apply Certificate Manifest
         uses: Azure/k8s-deploy@v5
         with:
           manifests: ./src/app/ContosoTraders.Api.Products/Manifests/Certificate.yaml
           force: true
+
+      - name: Delete NSG rule to allow certificate validation
+        uses: azure/powershell@v2
+        with: 
+          azPSVersion: "latest"
+          inlineScript: |        
+            # Wait for the certificate to be created
+            kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' certificate/tls-secret
+            # We can delete the NSG rule to allow letsencrypt to validate the domain as no longer needed
+            az network nsg rule delete --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80
 
       - name: Update Ingress Manifest
         uses: cschleiden/replace-tokens@v1.3
