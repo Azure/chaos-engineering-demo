@@ -527,8 +527,9 @@ jobs:
           inlineScript: |    
             "kubectl apply --validate=false -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.1/cert-manager.yaml" | Invoke-Expression
             $webhookpod = (kubectl get pods -n cert-manager -l app=webhook -o jsonpath='{.items[0].metadata.name}')
-            ("kubectl wait -n cert-manager --for=jsonpath='{.status.phase}'=Running pod/$webhookpod --timeout=300s") | Invoke-Expression
-
+            # Wait for the webhook pod to be running
+            kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' pod/$webhookpod --timeout=300s
+           
       - name: Apply ClusterIssuer Manifest
         uses: Azure/k8s-deploy@v5
         with:
