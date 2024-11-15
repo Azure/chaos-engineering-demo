@@ -529,7 +529,13 @@ jobs:
             $webhookpod = (kubectl get pods -n cert-manager -l app=webhook -o jsonpath='{.items[0].metadata.name}')
             # Wait for the webhook pod to be running
             kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' pod/$webhookpod -n cert-manager --timeout=300s
-           
+      
+        # If we proceed immediately, we'll catch CertManager in an unready state. 
+        # Ideally we would solve this with kubectl wait, but apparently that's not enough in this case. 
+      - name: Wait 30 seconds
+        run: sleep 30s
+        shell: bash
+      
       - name: Apply ClusterIssuer Manifest
         uses: Azure/k8s-deploy@v5
         with:
