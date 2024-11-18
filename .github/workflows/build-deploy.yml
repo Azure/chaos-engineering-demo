@@ -573,7 +573,9 @@ jobs:
         uses: azure/powershell@v2
         with: 
           azPSVersion: "latest"
-          inlineScript: |        
+          inlineScript: |   
+            # Enable exit on error
+            set -e     
             # Wait for the certificate to be created
             kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' certificate/tls-secret --timeout=300s
             # We can delete the NSG rule to allow letsencrypt to validate the domain as no longer needed
