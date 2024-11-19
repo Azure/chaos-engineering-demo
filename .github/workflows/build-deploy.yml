@@ -574,10 +574,13 @@ jobs:
         with: 
           azPSVersion: "latest"
           inlineScript: |   
-            # Enable exit on error
-            set -e     
             # Wait for the certificate to be created
             kubectl wait --for='jsonpath={.status.conditions[?(@.type=="Ready")].status}=True' certificate/tls-secret --timeout=300s
+            # Check that the wait command succeeded
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Timeout occurred while waiting for the certificate to be created."
+              exit 1
+            }
             # We can delete the NSG rule to allow letsencrypt to validate the domain as no longer needed
             az network nsg rule delete --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80
 
