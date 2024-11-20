@@ -502,11 +502,7 @@ jobs:
 
             # Update that IP address resource with a new FQDN label:
             $ip = (az network public-ip update --ids $ip_resource --dns-name ${{ env.DEPLOYMENT_NAME }}) | ConvertFrom-Json
-
-            # We need to add the IP to the NSG rule to allow letsencrypt to validate the domain
-            # $existingPrefix = (az network nsg rule show --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80 --query "destinationAddressPrefix" -o tsv)
-            # az network nsg rule update --resource-group ${{ env.DEPLOYMENT_NAME }}-rg --nsg-name ${{ env.DEPLOYMENT_NAME }}nsg-aks --name Allow-Inbound-Internet-80 --destination-address-prefixes $existingPrefix $ingress_ip
-            
+ 
             # Spit the full FQDN out to the GitHub environment
             $fqdn = $ip.dnsSettings.fqdn
             Write-Output "Settings FQDN $fqdn on IP address $ingress_ip"
