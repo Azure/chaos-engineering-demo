@@ -18,7 +18,7 @@ jobs:
       DEPLOYMENTNAME: ${{ steps.make-name.outputs.DEPLOYMENTNAME }}
     steps:
     - name: Compose deployment name
-      uses: azure/powershell@v2
+      uses: azure/powershell@53dd145408794f7e80f97cfcca04155c85234709 # v2.0.0
       id: make-name
       with: 
         azPSVersion: "latest"
@@ -49,21 +49,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: 'Checkout GitHub Action'
-      uses: actions/checkout@main
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: 'Login via Azure CLI'
-      uses: azure/login@v2
+      uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         enable-AzPSSession: true 
 
     - name: Download Deployment Output
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: deploymentOutput
 
     - name: Parse Deployment Output
-      uses: azure/powershell@v2
+      uses: azure/powershell@53dd145408794f7e80f97cfcca04155c85234709 # v2.0.0
       with: 
         azPSVersion: "latest"
         inlineScript: | 
@@ -73,7 +73,7 @@ jobs:
           }
 
     - name: Delete Resource Group
-      uses: azure/cli@v2
+      uses: azure/cli@9f7ce6f37c31b777ec6c6b6d1dfe7db79f497956 # v2.2.0
       with: 
         azPSVersion: "latest"
         inlineScript: | 
