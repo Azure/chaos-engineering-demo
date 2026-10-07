@@ -10,9 +10,9 @@ jobs:
       runs-on: ubuntu-latest
       steps:
         - name: 'Checkout GitHub Action'
-          uses: actions/checkout@main
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         - name: Setup Node
-          uses: actions/setup-node@v3
+          uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
           with:
             node-version: 20.15.0
             cache: npm
@@ -24,7 +24,7 @@ jobs:
           run: npm run build
           working-directory: src/app/ContosoTraders.Ui.Website
         - name: Save build output
-          uses: actions/upload-artifact@v4
+          uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
           with:
             name: websiteBuild
             path: src/app/ContosoTraders.Ui.Website/build
